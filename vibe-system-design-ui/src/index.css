@@ -1,0 +1,162 @@
+@import url("@xyflow/react/dist/style.css");
+@import url("./xy-theme.css");
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+html,
+body {
+    margin: 0;
+    font-family: sans-serif;
+    box-sizing: border-box;
+}
+
+#app {
+    width: 100vw;
+    height: 100vh;
+}
+
+.wrapper {
+    flex-grow: 1;
+    height: 100%;
+    width: 100%;
+}
+
+.custom-node {
+    padding: 10px 20px;
+    border-radius: 5px;
+    background: var(--xy-node-background-color, #fff);
+    border: 1px solid var(--xy-node-border-color, #1a192b);
+    font-size: 12px;
+    color: var(--xy-node-color, #222);
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+    --radius: 0.5rem;
+    --background: #f6f5f4;
+    --foreground: #000000;
+    --card: #ffffff;
+    --card-foreground: #000000;
+    --popover: #ffffff;
+    --popover-foreground: #000000;
+    --primary: #0075de;
+    --primary-foreground: #ffffff;
+    --secondary: #213183;
+    --secondary-foreground: #ffffff;
+    --muted: #f6f5f4;
+    --muted-foreground: #615d59;
+    --accent: #f6f5f4;
+    --accent-foreground: #0075de;
+    --destructive: #dd5b00;
+    --destructive-foreground: #ffffff;
+    --border: #e6e6e6;
+    --input: #e6e6e6;
+    --ring: #0075de;
+    --chart-1: #0075de;
+    --chart-2: #2a9d99;
+    --chart-3: #d6b6f6;
+    --chart-4: #ff64c8;
+    --chart-5: #dd5b00;
+    --sidebar: #f6f5f4;
+    --sidebar-foreground: #31302e;
+    --sidebar-primary: #0075de;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #ffffff;
+    --sidebar-accent-foreground: #000000;
+    --sidebar-border: #e6e6e6;
+    --sidebar-ring: #0075de;
+}
+
+.dark {
+    --background: #191919;
+    --foreground: #ffffff;
+    --card: #202020;
+    --card-foreground: #ffffff;
+    --popover: #202020;
+    --popover-foreground: #ffffff;
+    --primary: #0075de;
+    --primary-foreground: #ffffff;
+    --secondary: #2f2f2f;
+    --secondary-foreground: #ffffff;
+    --muted: #2f2f2f;
+    --muted-foreground: #a39e98;
+    --accent: #2f2f2f;
+    --accent-foreground: #62aef0;
+    --destructive: #dd5b00;
+    --destructive-foreground: #ffffff;
+    --border: #2f2f2f;
+    --input: #2f2f2f;
+    --ring: #0075de;
+    --chart-1: #62aef0;
+    --chart-2: #2a9d99;
+    --chart-3: #d6b6f6;
+    --chart-4: #ff64c8;
+    --chart-5: #dd5b00;
+    --sidebar: #191919;
+    --sidebar-foreground: #a39e98;
+    --sidebar-primary: #0075de;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #202020;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #2f2f2f;
+    --sidebar-ring: #0075de;
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+/* Ensure box sizing and borders work properly inside custom node */
+.react-flow__node {
+    box-sizing: border-box;
+}
