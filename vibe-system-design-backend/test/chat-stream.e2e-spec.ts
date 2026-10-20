@@ -139,4 +139,46 @@ describe('POST /v1/chat/stream (e2e)', () => {
     );
     await app.close();
   });
+
+  it('answers the CORS preflight request for an allowed origin', async () => {
+    const app = await createApp(deepAgentStub(events));
+    const response = await request(app.getHttpServer())
+      .options('/v1/chat/stream')
+      .set('Origin', 'http://localhost:5173')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type');
+
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://localhost:5173',
+    );
+    expect(response.headers['access-control-allow-methods']).toContain('POST');
+    await app.close();
+  });
+
+  it('sends the CORS header on the stream response', async () => {
+    const app = await createApp(deepAgentStub(events));
+    const response = await request(app.getHttpServer())
+      .post('/v1/chat/stream')
+      .set('Origin', 'http://localhost:5173')
+      .send({ messages: [{ role: 'user', content: 'hi' }] });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://localhost:5173',
+    );
+    await app.close();
+  });
+
+  it('sends no CORS header for an origin that is not allowed', async () => {
+    const app = await createApp(deepAgentStub(events));
+    const response = await request(app.getHttpServer())
+      .post('/v1/chat/stream')
+      .set('Origin', 'http://evil.test')
+      .send({ messages: [{ role: 'user', content: 'hi' }] });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    await app.close();
+  });
 });
