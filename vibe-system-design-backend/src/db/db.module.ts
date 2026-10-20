@@ -1,4 +1,4 @@
-import { Global, Module, type OnModuleDestroy } from '@nestjs/common';
+import { Global, Inject, Module, type OnModuleDestroy } from '@nestjs/common';
 
 import { createDb, type DrizzleDb } from './db.client.js';
 
@@ -37,7 +37,7 @@ export interface DbConnection {
   exports: [DB, DB_CONNECTION],
 })
 export class DbModule implements OnModuleDestroy {
-  constructor(private readonly connection: DbConnection) {}
+  constructor(@Inject(DB_CONNECTION) private readonly connection: DbConnection) {}
 
   async onModuleDestroy(): Promise<void> {
     await this.connection.close();

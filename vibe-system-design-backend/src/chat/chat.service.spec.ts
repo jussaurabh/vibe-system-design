@@ -1,10 +1,15 @@
 import { HumanMessage } from '@langchain/core/messages';
+import { NotFoundException } from '@nestjs/common';
 import type { ProtocolEvent } from '@langchain/langgraph';
 
+import type { StreamableAgent } from '../agent/agent.provider.js';
+import { HARDCODED_USER_ID } from './chat.constants.js';
 import { ChatService } from './chat.service.js';
+import { FakeChatRepository } from './fake-chat.repository.js';
 
 function stubAgent(events: ProtocolEvent[]) {
   return {
+    modelName: 'test-model',
     streamEvents: vi.fn().mockResolvedValue({
       [Symbol.asyncIterator]: async function* () {
         for (const event of events) yield event;
@@ -13,89 +18,118 @@ function stubAgent(events: ProtocolEvent[]) {
   };
 }
 
+function messageEvent(method: string, data: unknown): ProtocolEvent {
+  return { type: 'event', seq: 1, method, params: { namespace: [], timestamp: 0, data } } as ProtocolEvent;
+}
+
+/** Build a service with a fake repository that holds one session. */
+function buildService(agent: StreamableAgent, repository = new FakeChatRepository()) {
+  repository.addSession({
+    id: 'ses_test',
+    title: '',
+    createdAt: 1000,
+    updatedAt: 1000,
+    lastMessageAt: null,
+  });
+  return { service: new ChatService(agent, repository), repository };
+}
+
 describe('ChatService', () => {
-  it('streams v3 events with hardcoded ids in configurable and forwards the abort signal', async () => {
-    const event = {
-      type: 'event',
-      seq: 1,
-      method: 'messages',
-      params: { namespace: [], timestamp: 0, data: { event: 'message-start' } },
-    } as ProtocolEvent;
-    const streamEvents = vi.fn().mockResolvedValue({
-      [Symbol.asyncIterator]: async function* () {
-        yield event;
-      },
-    });
-    const service = new ChatService({ streamEvents });
-    const signal = new AbortController().signal;
+  it('the user message is stored before the agent runs', async () => {
+    const agent = stubAgent([]);
+    const { service, repository } = buildService(agent);
 
-    const received: ProtocolEvent[] = [];
-    for await (const e of service.stream([new HumanMessage('hi')], signal)) received.push(e);
-
-    expect(received).toEqual([event]);
-    expect(streamEvents).toHaveBeenCalledWith(
-      { messages: [expect.any(HumanMessage)] },
-      {
-        version: 'v3',
-        configurable: {
-          thread_id: 'thread-local-dev',
-          user_id: 'user-local-dev',
-          session_id: 'session-local-dev',
-        },
-        signal,
-      },
-    );
-  });
-
-  it('forwards only allow-listed events and keeps the payload untouched', async () => {
-    const allowedEvent = {
-      type: 'event',
-      seq: 1,
-      method: 'messages',
-      params: {
-        namespace: [],
-        timestamp: 0,
-        data: { event: 'content-block-delta', delta: { type: 'text-delta', text: 'hi' } },
-      },
-    } as ProtocolEvent;
-    const blockedEvent = {
-      type: 'event',
-      seq: 2,
-      method: 'values',
-      params: { namespace: [], timestamp: 1, data: { messages: [] } },
-    } as ProtocolEvent;
-    const service = new ChatService(stubAgent([allowedEvent, blockedEvent]));
-
-    const received: ProtocolEvent[] = [];
-    for await (const event of service.stream([new HumanMessage('hi')], new AbortController().signal)) {
-      received.push(event);
+    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+      // The stream carries no event in this test.
     }
 
-    expect(received).toEqual([allowedEvent]);
-    expect(received[0]).toBe(allowedEvent);
+    const stored = await repository.listMessages('ses_test');
+    expect(stored).toHaveLength(1);
+    expect(stored[0].senderType).toBe('user');
+    expect(stored[0].content).toEqual([{ type: 'text', text: 'hi' }]);
+
+    const received = agent.streamEvents.mock.calls[0][0];
+    expect(received.messages.at(-1)).toBeInstanceOf(HumanMessage);
+    expect(JSON.stringify((received.messages.at(-1) as HumanMessage).content)).toBe('"hi"');
   });
 
-  it('forwards an event added through the STREAM_EVENTS env override', async () => {
-    const previous = process.env.STREAM_EVENTS;
-    process.env.STREAM_EVENTS = 'custom:audit';
-    try {
-      const auditEvent = {
-        type: 'event',
-        seq: 1,
-        method: 'custom:audit',
-        params: { namespace: [], timestamp: 0, data: { note: 'x' } },
-      } as ProtocolEvent;
-      const service = new ChatService(stubAgent([auditEvent]));
+  it('an unknown session id is a 404', async () => {
+    const agent = stubAgent([]);
+    const service = new ChatService(agent, new FakeChatRepository());
 
-      const received: ProtocolEvent[] = [];
-      for await (const event of service.stream([new HumanMessage('hi')], new AbortController().signal)) {
-        received.push(event);
+    await expect(async () => {
+      for await (const _event of service.stream('ses_missing', 'hi', new AbortController().signal)) {
+        // The stream never starts.
       }
+    }).rejects.toBeInstanceOf(NotFoundException);
+    expect(agent.streamEvents).not.toHaveBeenCalled();
+  });
 
-      expect(received).toEqual([auditEvent]);
-    } finally {
-      if (previous === undefined) delete process.env.STREAM_EVENTS;
-      else process.env.STREAM_EVENTS = previous;
+  it('the session id is the thread id of the agent', async () => {
+    const agent = stubAgent([]);
+    const { service } = buildService(agent);
+
+    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+      // The stream carries no event in this test.
     }
+
+    expect(agent.streamEvents).toHaveBeenCalledWith(expect.anything(), {
+      version: 'v3',
+      configurable: {
+        thread_id: 'ses_test',
+        user_id: 'user-local-dev',
+        session_id: 'ses_test',
+      },
+      signal: expect.anything(),
+    });
+  });
+
+  it('a stopped stream stores the partial reply', async () => {
+    const agent = stubAgent([
+      messageEvent('messages', { event: 'message-start', id: 'm-1' }),
+      messageEvent('messages', {
+        event: 'content-block-delta',
+        delta: { type: 'text-delta', text: 'partial' },
+      }),
+    ]);
+    const { service, repository } = buildService(agent);
+
+    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+      // The stream ends with the assistant message still open.
+    }
+
+    const stored = await repository.listMessages('ses_test');
+    const reply = stored.find((row) => row.senderType === 'assistant');
+    expect(reply).toBeDefined();
+    expect(reply?.status).toBe('incomplete');
+    expect(reply?.content).toEqual([{ type: 'text', text: 'partial' }]);
+  });
+
+  it('the title is cut from the first user message', async () => {
+    const agent = stubAgent([]);
+    const { service, repository } = buildService(agent);
+
+    for await (const _event of service.stream('ses_test', 'a'.repeat(200), new AbortController().signal)) {
+      // The stream carries no event in this test.
+    }
+
+    const session = await repository.getSession(HARDCODED_USER_ID, 'ses_test');
+    expect(session?.title.length).toBeLessThanOrEqual(60);
+    expect(session?.title.length).toBeGreaterThan(0);
+  });
+
+  it('a database write failure does not break the stream', async () => {
+    const event = messageEvent('messages', { event: 'message-start', id: 'm-1' });
+    const agent = stubAgent([event]);
+    const { service, repository } = buildService(agent);
+    vi.spyOn(repository, 'appendMessage').mockRejectedValue(new Error('the database is down'));
+
+    const received: ProtocolEvent[] = [];
+    for await (const receivedEvent of service.stream('ses_test', 'hi', new AbortController().signal)) {
+      received.push(receivedEvent);
+    }
+
+    expect(agent.streamEvents).toHaveBeenCalled();
+    expect(received).toEqual([event]);
   });
 });

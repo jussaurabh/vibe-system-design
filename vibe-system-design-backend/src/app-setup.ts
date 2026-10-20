@@ -32,7 +32,7 @@ export function configureApp(app: INestApplication): void {
   // preflight returns 404 and the browser blocks the POST request.
   app.enableCors({
     origin: resolveCorsOrigins(),
-    methods: ['GET', 'HEAD', 'POST', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 86_400,
   });
 }

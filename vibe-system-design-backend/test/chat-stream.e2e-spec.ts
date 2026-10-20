@@ -1,11 +1,16 @@
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { SystemMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { ProtocolEvent } from '@langchain/langgraph';
 import { AppModule } from '../src/app.module.js';
 import { AGENT_CONFIG, DEEP_AGENT } from '../src/agent/agent.provider.js';
 import { configureApp } from '../src/app-setup.js';
+import { CHAT_REPOSITORY } from '../src/chat/chat.repository.js';
+import { FakeChatRepository } from '../src/chat/fake-chat.repository.js';
+import { DB_CONNECTION } from '../src/db/db.module.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/chat/sse.js';
+
+const SESSION_ID = 'ses_test';
 
 const events: ProtocolEvent[] = [
   { type: 'event', seq: 1, method: 'messages', params: { namespace: [], timestamp: 0, data: { event: 'message-start' } } },
@@ -14,6 +19,7 @@ const events: ProtocolEvent[] = [
 
 function deepAgentStub(eventsOrError: ProtocolEvent[] | Error) {
   return {
+    modelName: 'test-model',
     streamEvents: vi.fn(async () => ({
       [Symbol.asyncIterator]: async function* () {
         if (eventsOrError instanceof Error) throw eventsOrError;
@@ -23,12 +29,30 @@ function deepAgentStub(eventsOrError: ProtocolEvent[] | Error) {
   };
 }
 
+function fakeRepository(): FakeChatRepository {
+  const repository = new FakeChatRepository();
+  repository.addSession({
+    id: SESSION_ID,
+    title: 'A session',
+    createdAt: 1000,
+    updatedAt: 1000,
+    lastMessageAt: null,
+  });
+  return repository;
+}
+
 async function createApp(agent: unknown) {
   const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DEEP_AGENT)
     .useValue(agent)
     .overrideProvider(AGENT_CONFIG)
     .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
+    .overrideProvider(CHAT_REPOSITORY)
+    .useValue(fakeRepository())
+    // The database module is overridden too, so the test needs no database
+    // and no DATABASE_URL.
+    .overrideProvider(DB_CONNECTION)
+    .useValue({ db: {}, close: async () => {} })
     .compile();
   const app = moduleFixture.createNestApplication();
   configureApp(app);
@@ -41,7 +65,7 @@ describe('POST /v1/chat/stream (e2e)', () => {
     const app = await createApp(deepAgentStub(events));
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
-      .send({ messages: [{ role: 'user', content: 'hi' }] });
+      .send({ sessionId: SESSION_ID, message: 'hi' });
 
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/event-stream');
@@ -97,7 +121,7 @@ describe('POST /v1/chat/stream (e2e)', () => {
     const app = await createApp(deepAgentStub([...allowed, blocked]));
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
-      .send({ messages: [{ role: 'user', content: 'hi' }] });
+      .send({ sessionId: SESSION_ID, message: 'hi' });
 
     expect(response.text).toBe(`${allowed.map(formatEventFrame).join('')}${formatDoneFrame()}`);
     expect(response.text).not.toContain('"method":"values"');
@@ -108,7 +132,7 @@ describe('POST /v1/chat/stream (e2e)', () => {
     const app = await createApp(deepAgentStub(events));
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
-      .send({ messages: [] });
+      .send({ sessionId: SESSION_ID });
 
     expect(response.status).toBe(400);
     expect(response.headers['content-type']).not.toContain('text/event-stream');
@@ -119,22 +143,49 @@ describe('POST /v1/chat/stream (e2e)', () => {
     const app = await createApp(deepAgentStub(new Error('model not found')));
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
-      .send({ messages: [{ role: 'user', content: 'hi' }] });
+      .send({ sessionId: SESSION_ID, message: 'hi' });
 
     expect(response.headers['content-type']).toContain('text/event-stream');
     expect(response.text).toBe(formatErrorFrame('model not found'));
     await app.close();
   });
 
-  it('forwards a system-only conversation to the agent', async () => {
+  it('replays the stored system message to the agent', async () => {
     const agent = deepAgentStub(events);
-    const app = await createApp(agent);
+    const repository = fakeRepository();
+    repository.addMessage({
+      id: 'msg_system',
+      sessionId: SESSION_ID,
+      createdAt: 1000,
+      seq: 1,
+      senderType: 'system',
+      content: [{ type: 'text', text: 'be nice' }],
+      status: 'complete',
+      tokenCount: null,
+      modelName: null,
+      latencyMs: null,
+    });
+
+    const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(DEEP_AGENT)
+      .useValue(agent)
+      .overrideProvider(AGENT_CONFIG)
+      .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
+      .overrideProvider(CHAT_REPOSITORY)
+      .useValue(repository)
+      .overrideProvider(DB_CONNECTION)
+      .useValue({ db: {}, close: async () => {} })
+      .compile();
+    const app = moduleFixture.createNestApplication();
+    configureApp(app);
+    await app.init();
+
     await request(app.getHttpServer())
       .post('/v1/chat/stream')
-      .send({ messages: [{ role: 'system', content: 'be nice' }] });
+      .send({ sessionId: SESSION_ID, message: 'hi' });
 
     expect(agent.streamEvents).toHaveBeenCalledWith(
-      { messages: [expect.any(SystemMessage)] },
+      { messages: [expect.any(SystemMessage), expect.any(HumanMessage)] },
       expect.objectContaining({ version: 'v3' }),
     );
     await app.close();
@@ -161,7 +212,7 @@ describe('POST /v1/chat/stream (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
       .set('Origin', 'http://localhost:5173')
-      .send({ messages: [{ role: 'user', content: 'hi' }] });
+      .send({ sessionId: SESSION_ID, message: 'hi' });
 
     expect(response.status).toBe(200);
     expect(response.headers['access-control-allow-origin']).toBe(
@@ -175,7 +226,7 @@ describe('POST /v1/chat/stream (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
       .set('Origin', 'http://evil.test')
-      .send({ messages: [{ role: 'user', content: 'hi' }] });
+      .send({ sessionId: SESSION_ID, message: 'hi' });
 
     expect(response.status).toBe(200);
     expect(response.headers['access-control-allow-origin']).toBeUndefined();

@@ -9,6 +9,8 @@ export const DEEP_AGENT = Symbol('DEEP_AGENT');
 export const AGENT_CONFIG = Symbol('AGENT_CONFIG');
 
 export interface StreamableAgent {
+  /** The name of the model behind the agent. The chat stores it on a row. */
+  readonly modelName?: string;
   streamEvents(
     input: { messages: BaseMessage[] },
     config: { version: 'v3'; configurable: Record<string, string>; signal: AbortSignal },
@@ -34,5 +36,5 @@ export function createStreamableAgent(config: AgentConfig): StreamableAgent {
   const streamEvents: StreamableAgent['streamEvents'] = async (input, cfg) =>
     deepAgent.streamEvents(input, cfg);
 
-  return { streamEvents };
+  return { modelName: config.model, streamEvents };
 }

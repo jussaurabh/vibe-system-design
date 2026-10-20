@@ -1,28 +1,39 @@
 import { z } from 'zod';
-import { AIMessage, HumanMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages';
 
 export const chatStreamRequestSchema = z.object({
-  messages: z
-    .array(
-      z.object({
-        role: z.enum(['system', 'user', 'assistant']),
-        content: z.string().min(1),
-      }),
-    )
-    .min(1),
+  sessionId: z.string().min(1),
+  message: z.string().min(1),
 });
 
 export type ChatStreamRequestDto = z.infer<typeof chatStreamRequestSchema>;
 
-export function toLangChainMessages(messages: ChatStreamRequestDto['messages']): BaseMessage[] {
-  return messages.map((message) => {
-    switch (message.role) {
-      case 'system':
-        return new SystemMessage(message.content);
-      case 'user':
-        return new HumanMessage(message.content);
-      case 'assistant':
-        return new AIMessage(message.content);
-    }
-  });
-}
+export const sessionSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  lastMessageAt: z.number().nullable(),
+});
+
+export type SessionSummaryDto = z.infer<typeof sessionSummarySchema>;
+
+export const storedMessageSchema = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  createdAt: z.number(),
+  seq: z.number(),
+  senderType: z.enum(['user', 'assistant', 'system', 'tool']),
+  content: z.array(z.unknown()),
+  status: z.enum(['complete', 'incomplete', 'error']),
+  tokenCount: z.number().nullable(),
+  modelName: z.string().nullable(),
+  latencyMs: z.number().nullable(),
+});
+
+export type StoredMessageDto = z.infer<typeof storedMessageSchema>;
+
+export const renameSessionBodySchema = z.object({
+  title: z.string().min(1).max(120),
+});
+
+export type RenameSessionBodyDto = z.infer<typeof renameSessionBodySchema>;
