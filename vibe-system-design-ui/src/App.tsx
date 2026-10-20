@@ -13,6 +13,7 @@ import {
 import { Sun, Moon, Search } from "lucide-react";
 import CustomNode from "./CustomNode";
 import CustomEdge from "./CustomEdge";
+import { ChatPanel } from "./components/chat/ChatPanel";
 
 const initialNodes: Node[] = [
   {
@@ -184,11 +185,7 @@ const FlowEditor = () => {
   );
 
   return (
-    <div
-      className="wrapper w-screen h-screen relative"
-      ref={reactFlowWrapper}
-      id="app"
-    >
+    <div className="wrapper w-full h-full relative" ref={reactFlowWrapper}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -261,9 +258,14 @@ const FlowEditor = () => {
 
 function App() {
   return (
-    <ReactFlowProvider>
-      <FlowEditor />
-    </ReactFlowProvider>
+    <div className="flex h-screen w-screen overflow-hidden">
+      <div className="h-full w-[65%] min-w-0">
+        <ReactFlowProvider>
+          <FlowEditor />
+        </ReactFlowProvider>
+      </div>
+      <ChatPanel />
+    </div>
   );
 }
 

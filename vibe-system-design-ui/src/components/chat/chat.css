@@ -1,0 +1,118 @@
+/*
+ * Notion-styled chat surfaces. Colors come from the design tokens defined in
+ * src/index.css (`:root` and `.dark`), so the dark theme (`.dark` on <html>)
+ * flips every surface automatically via CSS variables — no class swapping here.
+ */
+
+.aui-chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 0;
+  font-family: Inter, -apple-system, system-ui, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+}
+
+.aui-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.aui-thread__viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.aui-thread__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.aui-thread__empty {
+  color: var(--muted-foreground, #615d59);
+  font-size: 15px;
+  line-height: 1.33;
+  padding: 8px 4px;
+}
+
+/* Message bubbles. User on the right in primary blue; assistant on the left on
+   the white card surface with a hairline border. */
+.aui-message {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 15px;
+  line-height: 1.33;
+}
+
+.aui-message p {
+  margin: 0;
+}
+
+.aui-message--user {
+  align-self: flex-end;
+}
+
+.aui-message--assistant {
+  align-self: flex-start;
+}
+
+/* Composer pinned to the bottom of the panel. */
+.aui-composer {
+  border-top: 1px solid var(--border, #e6e6e6);
+  padding: 12px 16px;
+}
+
+.aui-composer__root {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  border: 1px solid var(--border, #e6e6e6);
+  border-radius: 8px;
+  background: var(--card, #ffffff);
+  padding: 8px 10px;
+}
+
+.aui-composer__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.33;
+  padding: 2px 4px;
+  max-height: 160px;
+}
+
+.aui-composer__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 9999px;
+  background: var(--primary, #0075de);
+  color: var(--primary-foreground, #ffffff);
+  cursor: pointer;
+}
+
+.aui-composer__send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.aui-composer__send-icon {
+  width: 16px;
+  height: 16px;
+}
