@@ -13,6 +13,9 @@ const tokenCss = `
   --card-foreground: #000000;
   --primary: #0075de;
   --primary-foreground: #ffffff;
+  --destructive: #dd5b00;
+  --destructive-foreground: #ffffff;
+  --muted-foreground: #615d59;
   --border: #e6e6e6;
   --radius: 0.5rem;
 }
@@ -23,6 +26,9 @@ const tokenCss = `
   --card-foreground: #ffffff;
   --primary: #0075de;
   --primary-foreground: #ffffff;
+  --destructive: #dd5b00;
+  --destructive-foreground: #ffffff;
+  --muted-foreground: #a39e98;
   --border: #2f2f2f;
 }
 /* Concrete Tailwind token utilities used by the chat components (Tailwind
@@ -38,8 +44,15 @@ const tokenCss = `
 .text-card-foreground { color: #000000; }
 .dark .text-card-foreground { color: #ffffff; }
 .text-primary-foreground { color: #ffffff; }
+.text-destructive { color: #dd5b00; }
+.dark .text-destructive { color: #dd5b00; }
+.text-muted-foreground { color: #615d59; }
+.dark .text-muted-foreground { color: #a39e98; }
 .border-border { border-color: #e6e6e6; }
 .dark .border-border { border-color: #2f2f2f; }
+.border-destructive { border-color: #dd5b00; }
+.dark .border-destructive { border-color: #dd5b00; }
+.rounded-md { border-radius: 6.4px; }
 `;
 
 if (typeof document !== "undefined" && !document.getElementById("chat-test-tokens")) {
