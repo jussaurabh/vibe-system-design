@@ -50,7 +50,7 @@ describe("useChatStream", () => {
     ]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -64,11 +64,11 @@ describe("useChatStream", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("sends the conversation history in the request body", async () => {
+  it("sends the session id and the new message in the request body", async () => {
     const fetchMock = mockFetchFrames([DONE_FRAME]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("first");
     });
@@ -79,15 +79,133 @@ describe("useChatStream", () => {
     const firstBody = JSON.parse(
       (fetchMock.mock.calls[0][1] as RequestInit).body as string,
     );
-    expect(firstBody.messages).toEqual([{ role: "user", content: "first" }]);
+    expect(firstBody).toEqual({ sessionId: "ses_test", message: "first" });
 
     const secondBody = JSON.parse(
       (fetchMock.mock.calls[1][1] as RequestInit).body as string,
     );
-    expect(secondBody.messages).toEqual([
-      { role: "user", content: "first" },
-      { role: "user", content: "second" },
+    expect(secondBody).toEqual({ sessionId: "ses_test", message: "second" });
+  });
+
+  it("sets the error and sends nothing when no session is open", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.error?.message).toBe("No session is open.");
+  });
+
+  it("loads the stored messages into the thread", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    const { result } = renderHook(() => useChatStream({ sessionId: "ses_test" }));
+    act(() => {
+      result.current.loadMessages([
+        {
+          id: "msg_1",
+          sessionId: "ses_test",
+          createdAt: 1,
+          seq: 1,
+          senderType: "user",
+          content: [{ type: "text", text: "hi" }],
+          status: "complete",
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+        {
+          id: "msg_2",
+          sessionId: "ses_test",
+          createdAt: 2,
+          seq: 2,
+          senderType: "assistant",
+          content: [{ type: "text", text: "hello" }],
+          status: "incomplete",
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+      ]);
+    });
+
+    expect(result.current.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
     ]);
+    expect(assistantText(result.current.messages)).toBe("hello");
+    expect(result.current.messages[1].status).toEqual({
+      type: "incomplete",
+      reason: "cancelled",
+    });
+  });
+
+  it("skips the tool rows and the system rows", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    const { result } = renderHook(() => useChatStream({ sessionId: "ses_test" }));
+    act(() => {
+      result.current.loadMessages([
+        {
+          id: "msg_1",
+          sessionId: "ses_test",
+          createdAt: 1,
+          seq: 1,
+          senderType: "tool",
+          content: [{ type: "tool", toolCallId: "c", name: "ls" }],
+          status: "complete",
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+        {
+          id: "msg_2",
+          sessionId: "ses_test",
+          createdAt: 2,
+          seq: 2,
+          senderType: "system",
+          content: [{ type: "text", text: "be nice" }],
+          status: "complete",
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+      ]);
+    });
+
+    expect(result.current.messages).toHaveLength(0);
+  });
+
+  it("clears the message list", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    const { result } = renderHook(() => useChatStream({ sessionId: "ses_test" }));
+    act(() => {
+      result.current.loadMessages([
+        {
+          id: "msg_1",
+          sessionId: "ses_test",
+          createdAt: 1,
+          seq: 1,
+          senderType: "user",
+          content: [{ type: "text", text: "hi" }],
+          status: "complete",
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+      ]);
+    });
+    expect(result.current.messages).toHaveLength(1);
+
+    act(() => {
+      result.current.clearMessages();
+    });
+    expect(result.current.messages).toHaveLength(0);
   });
 
   it("sets the error and stops on an event: error frame", async () => {
@@ -96,7 +214,7 @@ describe("useChatStream", () => {
     ]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -111,7 +229,7 @@ describe("useChatStream", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -126,7 +244,7 @@ describe("useChatStream", () => {
     ]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -140,7 +258,7 @@ describe("useChatStream", () => {
     const fetchMock = mockFetch(stream);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
 
     act(() => {
       void result.current.send("first");
@@ -165,7 +283,7 @@ describe("useChatStream", () => {
     const fetchMock = mockFetch(stream);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
 
     act(() => {
       void result.current.send("hi");
@@ -192,7 +310,7 @@ describe("useChatStream", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
 
     act(() => {
       void result.current.send("first");
@@ -224,7 +342,7 @@ describe("useChatStream", () => {
     const fetchMock = mockFetchFrames([DONE_FRAME]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -239,7 +357,7 @@ describe("useChatStream", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { result } = renderHook(() =>
-      useChatStream({ baseUrl: "https://api.test" }),
+      useChatStream({ baseUrl: "https://api.test", sessionId: "ses_test" }),
     );
     await act(async () => {
       await result.current.send("hi");
@@ -252,7 +370,7 @@ describe("useChatStream", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("   ");
     });
@@ -274,7 +392,7 @@ describe("useChatStream", () => {
     ]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -296,7 +414,7 @@ describe("useChatStream", () => {
     ]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -316,7 +434,7 @@ describe("useChatStream", () => {
     ]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -334,7 +452,7 @@ describe("useChatStream", () => {
     ]);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
     await act(async () => {
       await result.current.send("hi");
     });
@@ -353,7 +471,7 @@ describe("useChatStream stream helpers", () => {
     const fetchMock = mockFetch(stream);
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useChatStream());
+    const { result } = renderHook(() => useChatStream({ sessionId: 'ses_test' }));
 
     act(() => {
       void result.current.send("hi");

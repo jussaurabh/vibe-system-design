@@ -15,10 +15,11 @@ import {
   parseSseFrame,
   type StreamAction,
 } from "../../lib/chat-events";
+import { resolveBaseUrl, type StoredMessage } from "../../lib/chat-api";
 
 /**
  * Shape returned by {@link useChatStream}. The hook owns the message list and
- * the run state. It POSTs the conversation to `POST /v1/chat/stream` and maps
+ * the run state. It POSTs the new message to `POST /v1/chat/stream` and maps
  * every streamed backend event to an assistant message.
  */
 export interface ChatStreamAPI {
@@ -28,12 +29,8 @@ export interface ChatStreamAPI {
   readonly error: Error | null;
   send(text: string): Promise<void>;
   stop(): void;
-}
-
-/** One message of the request body. */
-interface ChatRequestMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
+  loadMessages(messages: StoredMessage[]): void;
+  clearMessages(): void;
 }
 
 /** A text part of a message. */
@@ -44,57 +41,27 @@ interface TextPart {
 
 const STREAM_PATH = "/v1/chat/stream";
 
-/**
- * Read the base URL of the backend.
- *
- * An empty base URL keeps the request on the origin of the page. The Vite dev
- * server proxies the path to the backend, so the browser sends one POST
- * request and no CORS preflight request.
- */
-function resolveBaseUrl(opts?: { baseUrl?: string }): string {
-  if (opts?.baseUrl !== undefined) return opts.baseUrl;
-  const env = import.meta.env?.VITE_API_BASE_URL;
-  return typeof env === "string" ? env : "";
-}
-
-/** Read the text of a message. */
-function textOf(content: ThreadMessageLike["content"]): string {
-  if (typeof content === "string") return content;
-  let text = "";
-  for (const part of content) {
-    if (part.type === "text") text += part.text;
-  }
-  return text;
-}
-
 /** Read the text parts of a message. */
 function textParts(content: ThreadMessageLike["content"]): readonly TextPart[] {
   if (typeof content === "string") return [{ type: "text", text: content }];
   return content.filter((part): part is TextPart => part.type === "text");
 }
 
-/** Map the message list to the request body of the backend. */
-function toRequestMessages(
-  messages: readonly ThreadMessageLike[],
-): ChatRequestMessage[] {
-  const request: ChatRequestMessage[] = [];
-  for (const message of messages) {
-    const content = textOf(message.content).trim();
-    if (content.length === 0) continue;
-    request.push({ role: message.role, content });
-  }
-  return request;
-}
-
 /**
  * Chat hook that streams the backend `chat/stream` SSE endpoint.
  *
- * The hook owns the message list. It sends the conversation to the backend,
+ * The hook owns the message list. It sends the new message to the backend,
  * reads the response as a `text/event-stream`, and applies the action that
  * {@link eventToAction} returns for every frame. The hook aborts the stream
  * when the user sends a new message or calls `stop`.
+ *
+ * The database holds the history. The request carries the session id and the
+ * one new message, and the backend loads the rest of the conversation.
  */
-export function useChatStream(opts?: { baseUrl?: string }): ChatStreamAPI {
+export function useChatStream(opts?: {
+  baseUrl?: string;
+  sessionId?: string | null;
+}): ChatStreamAPI {
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -111,6 +78,12 @@ export function useChatStream(opts?: { baseUrl?: string }): ChatStreamAPI {
   useEffect(() => {
     baseUrlRef.current = resolveBaseUrl(opts);
   }, [opts]);
+
+  // The ref holds the session id, for the same reason.
+  const sessionIdRef = useRef<string | null>(opts?.sessionId ?? null);
+  useEffect(() => {
+    sessionIdRef.current = opts?.sessionId ?? null;
+  }, [opts?.sessionId]);
 
   const updateMessages = useCallback(
     (updater: (prev: ThreadMessageLike[]) => ThreadMessageLike[]) => {
@@ -281,6 +254,13 @@ export function useChatStream(opts?: { baseUrl?: string }): ChatStreamAPI {
       // Empty input is not sent.
       if (!trimmed) return;
 
+      const sessionId = sessionIdRef.current;
+      // The chat needs a session. The panel opens one before the user types.
+      if (!sessionId) {
+        setError(new Error("No session is open."));
+        return;
+      }
+
       // Abort the previous stream before the new one starts.
       abortRef.current?.abort();
       abortRef.current = null;
@@ -293,7 +273,6 @@ export function useChatStream(opts?: { baseUrl?: string }): ChatStreamAPI {
         { id: generateId(), role: "user", content: [{ type: "text", text: trimmed }] },
       ]);
 
-      const request = toRequestMessages(messagesRef.current);
       const controller = new AbortController();
       abortRef.current = controller;
       setIsRunning(true);
@@ -333,7 +312,7 @@ export function useChatStream(opts?: { baseUrl?: string }): ChatStreamAPI {
         const response = await fetch(`${baseUrlRef.current}${STREAM_PATH}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: request }),
+          body: JSON.stringify({ sessionId, message: trimmed }),
           signal: controller.signal,
         });
 
@@ -402,6 +381,48 @@ export function useChatStream(opts?: { baseUrl?: string }): ChatStreamAPI {
     setIsRunning(false);
   }, [failOpenAssistant]);
 
+  /**
+   * Replace the message list with the stored rows of a session. A tool row
+   * and a system row stay in the database. They are a log, not something the
+   * thread renders.
+   */
+  const loadMessages = useCallback(
+    (rows: StoredMessage[]) => {
+      const next: ThreadMessageLike[] = [];
+      for (const row of rows) {
+        if (row.senderType !== "user" && row.senderType !== "assistant") continue;
+        const content = row.content
+          .filter(
+            (part): part is { readonly type: "text"; readonly text: string } =>
+              part.type === "text" && typeof part.text === "string",
+          )
+          .map((part) => ({ type: "text" as const, text: part.text }));
+        next.push({
+          id: row.id,
+          role: row.senderType,
+          content,
+          // The status belongs to an assistant message. A user message
+          // carries none.
+          ...(row.senderType === "assistant"
+            ? {
+                status:
+                  row.status === "incomplete"
+                    ? ({ type: "incomplete", reason: "cancelled" } as const)
+                    : ({ type: "complete", reason: "stop" } as const),
+              }
+            : {}),
+        });
+      }
+      updateMessages(() => next);
+    },
+    [updateMessages],
+  );
+
+  /** Empty the message list. */
+  const clearMessages = useCallback(() => {
+    updateMessages(() => []);
+  }, [updateMessages]);
+
   const onNew = useCallback(
     async (message: AppendMessage) => {
       const first = message.content[0];
@@ -426,7 +447,16 @@ export function useChatStream(opts?: { baseUrl?: string }): ChatStreamAPI {
   });
 
   return useMemo(
-    () => ({ runtime, messages, isRunning, error, send, stop }),
-    [runtime, messages, isRunning, error, send, stop],
+    () => ({
+      runtime,
+      messages,
+      isRunning,
+      error,
+      send,
+      stop,
+      loadMessages,
+      clearMessages,
+    }),
+    [runtime, messages, isRunning, error, send, stop, loadMessages, clearMessages],
   );
 }
