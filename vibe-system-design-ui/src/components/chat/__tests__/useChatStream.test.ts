@@ -220,6 +220,34 @@ describe("useChatStream", () => {
     streams[1].close();
   });
 
+  it("calls the API on the same origin so the browser sends no preflight request", async () => {
+    const fetchMock = mockFetchFrames([DONE_FRAME]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useChatStream());
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toBe("/v1/chat/stream");
+    expect(url.startsWith("http")).toBe(false);
+  });
+
+  it("calls an absolute URL when the caller sets a base URL", async () => {
+    const fetchMock = mockFetchFrames([DONE_FRAME]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useChatStream({ baseUrl: "https://api.test" }),
+    );
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.test/v1/chat/stream");
+  });
+
   it("does not send on empty input", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

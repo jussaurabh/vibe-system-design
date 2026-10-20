@@ -42,14 +42,19 @@ interface TextPart {
   readonly text: string;
 }
 
-const DEFAULT_BASE_URL = "http://localhost:3000";
 const STREAM_PATH = "/v1/chat/stream";
 
-/** Read the base URL of the backend. */
+/**
+ * Read the base URL of the backend.
+ *
+ * An empty base URL keeps the request on the origin of the page. The Vite dev
+ * server proxies the path to the backend, so the browser sends one POST
+ * request and no CORS preflight request.
+ */
 function resolveBaseUrl(opts?: { baseUrl?: string }): string {
-  if (opts?.baseUrl) return opts.baseUrl;
+  if (opts?.baseUrl !== undefined) return opts.baseUrl;
   const env = import.meta.env?.VITE_API_BASE_URL;
-  return typeof env === "string" && env.length > 0 ? env : DEFAULT_BASE_URL;
+  return typeof env === "string" ? env : "";
 }
 
 /** Read the text of a message. */
