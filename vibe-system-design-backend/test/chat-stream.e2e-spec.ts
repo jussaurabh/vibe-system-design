@@ -191,6 +191,19 @@ describe('POST /v1/chat/stream (e2e)', () => {
     await app.close();
   });
 
+  it('answers 404 and never starts the agent for an unknown session id', async () => {
+    const agent = deepAgentStub(events);
+    const app = await createApp(agent);
+    const response = await request(app.getHttpServer())
+      .post('/v1/chat/stream')
+      .send({ sessionId: 'ses_missing', message: 'hi' });
+
+    expect(response.status).toBe(404);
+    expect(response.headers['content-type']).not.toContain('text/event-stream');
+    expect(agent.streamEvents).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it('answers the CORS preflight request for an allowed origin', async () => {
     const app = await createApp(deepAgentStub(events));
     const response = await request(app.getHttpServer())

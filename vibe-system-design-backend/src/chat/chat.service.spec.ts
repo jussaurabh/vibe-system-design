@@ -118,8 +118,65 @@ describe('ChatService', () => {
     expect(session?.title.length).toBeGreaterThan(0);
   });
 
-  it('a database write failure does not break the stream', async () => {
-    const event = messageEvent('messages', { event: 'message-start', id: 'm-1' });
+  it('a run the user stopped stores the partial reply as incomplete', async () => {
+    const controller = new AbortController();
+    const agent = {
+      modelName: 'test-model',
+      streamEvents: vi.fn(async () => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield messageEvent('messages', { event: 'message-start', id: 'm-1' });
+          yield messageEvent('messages', {
+            event: 'content-block-delta',
+            delta: { type: 'text-delta', text: 'partial' },
+          });
+          // The user pressed stop. The run fails and the signal is aborted.
+          controller.abort();
+          throw new Error('Abort');
+        },
+      })),
+    };
+    const { service, repository } = buildService(agent);
+
+    await expect(async () => {
+      for await (const _event of service.stream('ses_test', 'hi', controller.signal)) {
+        // The stream ends with the run.
+      }
+    }).rejects.toThrow('Abort');
+
+    const stored = await repository.listMessages('ses_test');
+    const reply = stored.find((row) => row.senderType === 'assistant');
+    expect(reply?.status).toBe('incomplete');
+    expect(reply?.content).toEqual([{ type: 'text', text: 'partial' }]);
+  });
+
+  it('a failed run stores the reply as an error', async () => {
+    const agent = {
+      modelName: 'test-model',
+      streamEvents: vi.fn(async () => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield messageEvent('messages', { event: 'message-start', id: 'm-1' });
+          yield messageEvent('messages', {
+            event: 'content-block-delta',
+            delta: { type: 'text-delta', text: 'partial' },
+          });
+          throw new Error('the model exploded');
+        },
+      })),
+    };
+    const { service, repository } = buildService(agent);
+
+    await expect(async () => {
+      for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+        // The stream ends with the run.
+      }
+    }).rejects.toThrow('the model exploded');
+
+    const stored = await repository.listMessages('ses_test');
+    const reply = stored.find((row) => row.senderType === 'assistant');
+    expect(reply?.status).toBe('error');
+  });
+
+  it('a database write failure does not break the stream', async () => {    const event = messageEvent('messages', { event: 'message-start', id: 'm-1' });
     const agent = stubAgent([event]);
     const { service, repository } = buildService(agent);
     vi.spyOn(repository, 'appendMessage').mockRejectedValue(new Error('the database is down'));

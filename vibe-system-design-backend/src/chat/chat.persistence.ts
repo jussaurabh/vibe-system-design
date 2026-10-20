@@ -92,7 +92,10 @@ function readDeltaText(delta: Record<string, unknown> | undefined): string | nul
 
 /** Report whether the payload of a content block start names a text block. */
 function isTextBlock(data: Record<string, unknown>): boolean {
+  // The protocol sends the block under `content`. The other names are the
+  // candidates of an earlier draft of the protocol.
   const block =
+    asObject(data['content']) ??
     asObject(data['contentBlock']) ??
     asObject(data['block']) ??
     (typeof data['type'] === 'string' ? { type: data['type'] } : undefined);
@@ -137,9 +140,12 @@ function readToolCallId(data: Record<string, unknown>): string | undefined {
 function readToolName(data: Record<string, unknown>): string | undefined {
   const name = data['name'];
   if (typeof name === 'string' && name.length > 0) return name;
-  const tool = asObject(data['tool']);
-  const toolName = tool?.['name'];
+  // The protocol sends the name under `tool_name`.
+  const toolName = data['tool_name'];
   if (typeof toolName === 'string' && toolName.length > 0) return toolName;
+  const tool = asObject(data['tool']);
+  const nestedName = tool?.['name'];
+  if (typeof nestedName === 'string' && nestedName.length > 0) return nestedName;
   return undefined;
 }
 
@@ -236,6 +242,8 @@ export class RunRecorder {
         this.openAssistant = null;
         row.status = 'complete';
         row.latencyMs = this.latencyOf(row);
+        // The usage of the run can arrive inside the finish payload.
+        row.tokenCount = readTokenCount(data) ?? row.tokenCount;
         this.lastAssistant = row;
         this.emit(row);
         break;

@@ -408,7 +408,9 @@ export function useChatStream(opts?: {
                 status:
                   row.status === "incomplete"
                     ? ({ type: "incomplete", reason: "cancelled" } as const)
-                    : ({ type: "complete", reason: "stop" } as const),
+                    : row.status === "error"
+                      ? ({ type: "incomplete", reason: "error" } as const)
+                      : ({ type: "complete", reason: "stop" } as const),
               }
             : {}),
         });

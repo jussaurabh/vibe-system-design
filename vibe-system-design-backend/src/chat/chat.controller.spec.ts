@@ -14,6 +14,9 @@ import { formatDoneFrame, formatErrorFrame, formatEventFrame } from './sse.js';
 
 function passingService(events: ProtocolEvent[]) {
   return {
+    async getSession() {
+      return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
+    },
     async *stream() {
       for (const event of events) yield event;
     },
@@ -71,6 +74,9 @@ describe('ChatController', () => {
     const gate = new Promise<void>((resolve) => (release = resolve));
     const seen: AbortSignal[] = [];
     const service = {
+      async getSession() {
+        return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
+      },
       async *stream(_sessionId: string, _message: string, signal: AbortSignal) {
         seen.push(signal);
         yield firstEvent;
@@ -97,6 +103,9 @@ describe('ChatController', () => {
   it('writes an error frame when the agent stream throws', async () => {
     const { res, written } = createFakeRes();
     const service = {
+      async getSession() {
+        return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
+      },
       // eslint-disable-next-line require-yield
       async *stream(): AsyncGenerator<ProtocolEvent> {
         throw new Error('provider exploded');

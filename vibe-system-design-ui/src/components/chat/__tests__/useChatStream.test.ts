@@ -180,6 +180,33 @@ describe("useChatStream", () => {
     expect(result.current.messages).toHaveLength(0);
   });
 
+  it("marks a failed reply as incomplete", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    const { result } = renderHook(() => useChatStream({ sessionId: "ses_test" }));
+    act(() => {
+      result.current.loadMessages([
+        {
+          id: "msg_1",
+          sessionId: "ses_test",
+          createdAt: 1,
+          seq: 1,
+          senderType: "assistant",
+          content: [{ type: "text", text: "boom" }],
+          status: "error",
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+      ]);
+    });
+
+    expect(result.current.messages[0].status).toEqual({
+      type: "incomplete",
+      reason: "error",
+    });
+  });
+
   it("clears the message list", async () => {
     vi.stubGlobal("fetch", vi.fn());
 

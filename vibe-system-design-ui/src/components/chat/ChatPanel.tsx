@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelLeft } from "lucide-react";
 
 import { ChatThread } from "./ChatThread";
@@ -38,6 +38,18 @@ export function ChatPanel() {
       ? activeSession.title
       : "Untitled session";
 
+  // The backend renames a session after its first message and moves its last
+  // message time. The list is read again when a run ends, so the header and
+  // the drawer show the new title.
+  const wasRunningRef = useRef(false);
+  useEffect(() => {
+    const wasRunning = wasRunningRef.current;
+    wasRunningRef.current = chat.isRunning;
+    if (!wasRunning || chat.isRunning) return;
+    if (sessions.activeSessionId === null) return;
+    void sessions.refreshSession(sessions.activeSessionId);
+  }, [chat.isRunning, sessions]);
+
   return (
     <div
       data-testid="chat-panel"
@@ -58,13 +70,13 @@ export function ChatPanel() {
         </span>
       </div>
 
-      {chat.error ? (
+      {chat.error !== null || sessions.error !== null ? (
         <div
           data-testid="chat-error"
           role="alert"
           className="aui-chat-error mx-4 mt-3 rounded-md border border-destructive bg-background px-3 py-2 text-sm text-destructive"
         >
-          {chat.error.message}
+          {(chat.error ?? sessions.error)?.message}
         </div>
       ) : null}
 

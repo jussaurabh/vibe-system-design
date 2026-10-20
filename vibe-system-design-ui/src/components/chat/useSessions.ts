@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createSession as createSessionApi,
   deleteSession as deleteSessionApi,
+  getSession as getSessionApi,
   listMessages as listMessagesApi,
   listSessions as listSessionsApi,
   type SessionSummary,
@@ -19,6 +20,7 @@ export interface SessionsAPI {
   createSession(): Promise<void>;
   removeSession(sessionId: string): Promise<void>;
   refresh(): Promise<void>;
+  refreshSession(sessionId: string): Promise<void>;
 }
 
 /**
@@ -96,6 +98,18 @@ export function useSessions(options?: {
     [createSession, selectSession, sessions],
   );
 
+  /**
+   * Read one session again and replace it in the list. The backend renames a
+   * session after its first message and moves its last message time, so the
+   * list is stale after a run.
+   */
+  const refreshSession = useCallback(async (sessionId: string): Promise<void> => {
+    const session = await getSessionApi(sessionId);
+    setSessions((previous) =>
+      previous.map((entry) => (entry.id === session.id ? session : entry)),
+    );
+  }, []);
+
   useEffect(() => {
     void run(refresh);
     // The hook loads the list once, when it mounts.
@@ -111,5 +125,6 @@ export function useSessions(options?: {
     createSession: () => run(createSession),
     removeSession: (sessionId: string) => run(() => removeSession(sessionId)),
     refresh: () => run(refresh),
+    refreshSession: (sessionId: string) => run(() => refreshSession(sessionId)),
   };
 }

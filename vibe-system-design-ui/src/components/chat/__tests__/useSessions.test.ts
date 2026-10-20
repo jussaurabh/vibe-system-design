@@ -107,6 +107,27 @@ describe("useSessions", () => {
     expect(result.current.activeSessionId).toBe("ses_1");
   });
 
+  it("refreshes one session", async () => {
+    const renamed: SessionSummary = { ...SESSION_ONE, title: "A new title" };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/v1/chat/sessions/ses_1") {
+        return jsonResponse({ session: renamed });
+      }
+      return jsonResponse({ sessions: [SESSION_ONE], messages: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSessions());
+    await waitFor(() => expect(result.current.activeSessionId).toBe("ses_1"));
+
+    await act(async () => {
+      await result.current.refreshSession("ses_1");
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/v1/chat/sessions/ses_1");
+    expect(result.current.sessions[0].title).toBe("A new title");
+  });
+
   it("removes a session", async () => {
     const fetchMock = routeFetch({ sessions: [SESSION_ONE, SESSION_TWO] });
     vi.stubGlobal("fetch", fetchMock);

@@ -145,7 +145,9 @@ export class ChatService {
         if (this.isEnabled(event)) yield event;
       }
     } catch (err) {
-      recorder.finish('error');
+      // A run the user stopped is not a failure. The partial reply is stored
+      // as incomplete.
+      recorder.finish(signal.aborted ? 'incomplete' : 'error');
       throw err;
     } finally {
       // A reply that never reached its end is incomplete.

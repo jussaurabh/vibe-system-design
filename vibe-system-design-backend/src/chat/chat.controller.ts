@@ -73,6 +73,10 @@ export class ChatController {
     const parsed = chatStreamRequestSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
+    // The session is loaded before the headers go out. A missing session is a
+    // 404, and the answer never becomes an event stream.
+    await this.chat.getSession(parsed.data.sessionId);
+
     for (const [key, value] of Object.entries(SSE_HEADERS)) res.setHeader(key, value);
     res.flushHeaders();
 

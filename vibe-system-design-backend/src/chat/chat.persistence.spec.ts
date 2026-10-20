@@ -178,4 +178,80 @@ describe('RunRecorder', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].content).toEqual([{ type: 'text', text: 'hi' }]);
   });
+
+  it('a text block opens a part from the protocol field content', () => {
+    const { recorder, rows } = collect();
+    recorder.handle(event('messages', { event: 'message-start' }));
+    recorder.handle(
+      event('messages', {
+        event: 'content-block-start',
+        index: 0,
+        content: { type: 'text', text: '' },
+      }),
+    );
+    recorder.handle(
+      event('messages', {
+        event: 'content-block-delta',
+        index: 0,
+        delta: { type: 'text-delta', text: 'Hello' },
+      }),
+    );
+    recorder.handle(event('messages', { event: 'content-block-finish', index: 0 }));
+    recorder.handle(
+      event('messages', {
+        event: 'content-block-start',
+        index: 1,
+        content: { type: 'text', text: '' },
+      }),
+    );
+    recorder.handle(
+      event('messages', {
+        event: 'content-block-delta',
+        index: 1,
+        delta: { type: 'text-delta', text: ' world' },
+      }),
+    );
+    recorder.handle(event('messages', { event: 'content-block-finish', index: 1 }));
+    recorder.handle(event('messages', { event: 'message-finish' }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content).toEqual([
+      { type: 'text', text: 'Hello' },
+      { type: 'text', text: ' world' },
+    ]);
+  });
+
+  it('a tool row reads the name from the protocol field tool_name', () => {
+    const { recorder, rows } = collect();
+    recorder.handle(
+      event('tools', {
+        event: 'tool-started',
+        tool_call_id: 'call_3',
+        tool_name: 'write_todos',
+        input: { a: 1 },
+      }),
+    );
+    recorder.handle(event('tools', { event: 'tool-finished', output: 'done' }));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content[0]).toMatchObject({
+      type: 'tool',
+      toolCallId: 'call_3',
+      name: 'write_todos',
+    });
+  });
+
+  it('a message finish carries the token count', () => {
+    const { recorder, rows } = collect();
+    recorder.handle(event('messages', { event: 'message-start' }));
+    recorder.handle(
+      event('messages', {
+        event: 'message-finish',
+        usage: { input_tokens: 10, output_tokens: 32, total_tokens: 42 },
+      }),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].tokenCount).toBe(42);
+  });
 });

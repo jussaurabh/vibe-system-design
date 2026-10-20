@@ -68,6 +68,13 @@ function mockApi(options: {
         json: async () => ({ sessions }),
       } as unknown as Response;
     }
+    if (url.includes("/v1/chat/sessions/")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ session: SESSION }),
+      } as unknown as Response;
+    }
     return { ok: true, status: 204 } as unknown as Response;
   });
 }
@@ -316,5 +323,42 @@ describe("ChatPanel", () => {
         expect.objectContaining({ method: "POST" }),
       ),
     );
+  });
+
+  it("reads the session again after a run", async () => {
+    const fetchMock = mockApi({
+      frames: [
+        dataFrame({ event: "message-start", id: "m-1", role: "ai" }),
+        DONE_FRAME,
+      ],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const user = userEvent.setup();
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Hello{Enter}");
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/v1/chat/sessions/ses_test"),
+    );
+  });
+
+  it("shows an error banner when the session list fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }),
+    );
+
+    render(<ChatPanel />);
+
+    const banner = await screen.findByTestId("chat-error");
+    expect(banner).toHaveTextContent(/500/);
   });
 });

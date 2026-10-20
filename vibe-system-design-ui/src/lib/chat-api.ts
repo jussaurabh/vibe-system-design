@@ -74,6 +74,14 @@ export async function createSession(): Promise<SessionSummary> {
   return body.session;
 }
 
+/** Read one session by its id. */
+export async function getSession(sessionId: string): Promise<SessionSummary> {
+  const body = await request<{ session: SessionSummary }>(
+    `${resolveBaseUrl()}/v1/chat/sessions/${sessionId}`,
+  );
+  return body.session;
+}
+
 /** Delete a session and its messages. */
 export async function deleteSession(sessionId: string): Promise<void> {
   const response = await fetch(`${resolveBaseUrl()}/v1/chat/sessions/${sessionId}`, {
