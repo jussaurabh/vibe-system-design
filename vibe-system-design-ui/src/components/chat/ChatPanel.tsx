@@ -1,5 +1,10 @@
+import { useRef, useState } from "react";
+import { PanelLeft } from "lucide-react";
+
 import { ChatThread } from "./ChatThread";
-import { useChatStream } from "./useChatStream";
+import { SessionDrawer } from "./SessionDrawer";
+import { useChatStream, type ChatStreamAPI } from "./useChatStream";
+import { useSessions } from "./useSessions";
 import "./chat.css";
 
 /**
@@ -8,23 +13,75 @@ import "./chat.css";
  * tokens; the dark theme (`.dark` on <html>) flips them via CSS variables.
  */
 export function ChatPanel() {
-  const { runtime, error } = useChatStream();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // The session hook hands the stored messages to the chat hook. The chat
+  // hook needs the session id, so the two hooks read each other through a
+  // ref instead of through the render order.
+  const chatRef = useRef<ChatStreamAPI | null>(null);
+  const sessions = useSessions({
+    onMessages: (messages) => chatRef.current?.loadMessages(messages),
+  });
+  const chat = useChatStream({ sessionId: sessions.activeSessionId });
+  // The ref is written during the render on purpose. The session hook loads
+  // the messages of the session in its mount effect, and that effect runs
+  // before any effect of this component. The chat hook must already be in
+  // the ref when the first session opens.
+  // eslint-disable-next-line react/refs
+  chatRef.current = chat;
+
+  const activeSession = sessions.sessions.find(
+    (session) => session.id === sessions.activeSessionId,
+  );
+  const title =
+    activeSession !== undefined && activeSession.title.length > 0
+      ? activeSession.title
+      : "Untitled session";
 
   return (
     <div
       data-testid="chat-panel"
       className="aui-chat-panel w-[35%] h-screen bg-background border-l border-border text-foreground"
     >
-      {error ? (
+      <div className="aui-chat-header">
+        <button
+          type="button"
+          data-testid="chat-menu"
+          aria-label="Open sessions"
+          className="aui-chat-header__menu"
+          onClick={() => setDrawerOpen((open) => !open)}
+        >
+          <PanelLeft className="aui-chat-header__menu-icon" aria-hidden="true" />
+        </button>
+        <span data-testid="chat-session-title" className="aui-chat-header__title">
+          {title}
+        </span>
+      </div>
+
+      {chat.error ? (
         <div
           data-testid="chat-error"
           role="alert"
           className="aui-chat-error mx-4 mt-3 rounded-md border border-destructive bg-background px-3 py-2 text-sm text-destructive"
         >
-          {error.message}
+          {chat.error.message}
         </div>
       ) : null}
-      <ChatThread runtime={runtime} />
+
+      <ChatThread
+        runtime={chat.runtime}
+        disabled={sessions.activeSessionId === null}
+      />
+
+      <SessionDrawer
+        open={drawerOpen}
+        sessions={sessions.sessions}
+        activeSessionId={sessions.activeSessionId}
+        onSelect={(id) => void sessions.selectSession(id)}
+        onCreate={() => void sessions.createSession()}
+        onDelete={(id) => void sessions.removeSession(id)}
+        onClose={() => setDrawerOpen(false)}
+      />
     </div>
   );
 }

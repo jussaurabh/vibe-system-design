@@ -80,7 +80,7 @@ function RunningIndicator() {
  * The composer. The input is disabled while a run is in flight, so the user
  * cannot queue a second message into a running stream.
  */
-function Composer() {
+function Composer({ disabled }: { disabled: boolean }) {
   const isRunning = useAuiState((s) => s.thread.isRunning);
 
   return (
@@ -90,7 +90,7 @@ function Composer() {
           aria-label="Composer"
           placeholder="Reply…"
           className="aui-composer__input"
-          disabled={isRunning}
+          disabled={isRunning || disabled}
         />
         <ComposerPrimitive.Send
           aria-label="Send message"
@@ -110,7 +110,13 @@ function Composer() {
  * `AssistantRuntimeProvider`. The `Thread` reads state from the nearest
  * runtime provider ancestor — no props are threaded through for messages.
  */
-export function ChatThread({ runtime }: { runtime: AssistantRuntime }) {
+export function ChatThread({
+  runtime,
+  disabled = false,
+}: {
+  runtime: AssistantRuntime;
+  disabled?: boolean;
+}) {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="aui-thread">
@@ -127,7 +133,7 @@ export function ChatThread({ runtime }: { runtime: AssistantRuntime }) {
           </div>
         </ThreadPrimitive.Viewport>
 
-        <Composer />
+        <Composer disabled={disabled} />
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );
