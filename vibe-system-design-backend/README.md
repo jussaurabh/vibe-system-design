@@ -97,7 +97,7 @@ The free plan needs no payment details and covers 300,000 events a month. You ca
 
 ## Stream event allow-list
 
-`POST /v1/chat/stream` forwards only allow-listed LangChain v3 protocol events. The base allow-list lives in `src/chat/stream-event-policy.ts` as `BASE_EVENT_SELECTORS`. The chat service applies the list, so the controller never changes.
+`POST /v1/chat/stream` forwards only allow-listed LangChain v3 protocol events. The base allow-list lives in `src/utils/stream-event-policy.ts` as `BASE_EVENT_SELECTORS`. The chat service applies the list, so the controller never changes.
 
 Base allow-list:
 
@@ -130,7 +130,21 @@ STREAM_EVENTS=values,custom:audit
 STREAM_EVENTS=messages/message-start,messages/usage
 ```
 
-To make an event permanent, add one entry to `BASE_EVENT_SELECTORS` in `src/chat/stream-event-policy.ts`.
+To make an event permanent, add one entry to `BASE_EVENT_SELECTORS` in `src/utils/stream-event-policy.ts`.
+
+## Structured logging
+
+- Every line is one JSON object on stdout, in development and in production. There is no pretty printing.
+- The fields every line carries: `level`, `logType`, `time`, `env`, `service`, `pid`, and `context`. A line written inside a request also carries `requestId`, `traceId`, and `seq`.
+- `logType` is `request` for the one line of an HTTP request and `app` for every other line.
+- The request line carries the fields of the request and the response: `method`, `url`, `path`, `route`, `query`, `params`, `ip`, `userAgent`, `contentType`, `requestContentLength`, `statusCode`, `responseContentLength`, `durationMs`, `userId`, and `err`.
+- The service writes lines with `this.logger.info('Message', { sessionId })`. The logger adds the rest.
+- `@Timed()` on a method writes one line with `operation` and `durationMs`, at the level `info` on success and `error` on failure. The decorator reads the context from the host class, so the class needs no constructor for the logger.
+- `this.logger.startTimer('name')` returns a callback that writes one timed line for a block inside a method.
+- The `x-trace-id` request header joins the lines of one flow. A valid value is echoed on the response. A missing or invalid value is replaced with a fresh `trace_` id. The value must match `^[A-Za-z0-9_-]{8,64}$`.
+- The paths `/health` and `/ping` and every `OPTIONS` request print no request line.
+- The configuration lives in `src/logging/logging-config.ts`, and the developer logger lives in `src/logging/app-logger.ts`.
+
 
 ## Resources
 

@@ -1,4 +1,4 @@
-import { cutTitle } from './chat.title.js';
+import { cutTitle } from './cut-title.js';
 
 describe('cutTitle', () => {
   it('keeps a short title whole', () => {

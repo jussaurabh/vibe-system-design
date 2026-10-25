@@ -1,6 +1,6 @@
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 
-import { toLangChainMessages } from './chat.history.js';
+import { toLangChainMessages } from './history.js';
 
 
 describe('toLangChainMessages', () => {

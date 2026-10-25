@@ -1,22 +1,24 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { HumanMessage } from '@langchain/core/messages';
 import type { ProtocolEvent } from '@langchain/langgraph';
 
 import { DEEP_AGENT, type StreamableAgent } from '../agent/agent.provider.js';
 import { HARDCODED_USER_ID } from './chat.constants.js';
-import { toLangChainMessages } from './chat.history.js';
+import { toLangChainMessages } from './utils/history.js';
 import { RunRecorder } from './chat.persistence.js';
 import { CHAT_REPOSITORY, type ChatRepository } from './chat.repository.js';
-import { cutTitle } from './chat.title.js';
+import { cutTitle } from '../utils/cut-title.js';
 import type { SessionSummary, StoredMessage } from './chat.types.js';
-import { newMessageId, newSessionId } from './id.js';
-import { createEventFilter } from './stream-event-filter.js';
-import { resolveEventSelectors } from './stream-event-policy.js';
+import { newMessageId, newSessionId } from './utils/id.js';
+import { createEventFilter } from '../utils/stream-event-filter.js';
+import { resolveEventSelectors } from '../utils/stream-event-policy.js';
+import { AppLogger } from '../logging/app-logger.js';
+import { Timed } from '../logging/utils/timed.js';
 
 @Injectable()
 export class ChatService {
   private readonly isEnabled: (event: ProtocolEvent) => boolean;
-  private readonly logger = new Logger(ChatService.name);
+  private readonly logger = new AppLogger(ChatService.name);
 
   constructor(
     @Inject(DEEP_AGENT) private readonly agent: StreamableAgent,
@@ -25,36 +27,117 @@ export class ChatService {
     this.isEnabled = createEventFilter(resolveEventSelectors());
   }
 
-  listSessions(): Promise<SessionSummary[]> {
-    return this.repository.listSessions(HARDCODED_USER_ID);
+  @Timed({ metaData: () => ({ userId: HARDCODED_USER_ID }) })
+  async listSessions(): Promise<SessionSummary[]> {
+    try {
+      const result = await this.repository.listSessions(HARDCODED_USER_ID);
+      this.logger.info('Listed chat sessions successfully', {
+        userId: HARDCODED_USER_ID,
+        count: result.length,
+      });
+      return result;
+    } catch (err) {
+      this.logger.error('Failed to list chat sessions', err);
+      throw err;
+    }
   }
 
-  createSession(): Promise<SessionSummary> {
-    return this.repository.createSession(HARDCODED_USER_ID, newSessionId(), Date.now());
+  @Timed({ metaData: () => ({ userId: HARDCODED_USER_ID }) })
+  async createSession(): Promise<SessionSummary> {
+    const sessionId = newSessionId();
+    const createdAt = Date.now();
+    try {
+      const result = await this.repository.createSession(HARDCODED_USER_ID, sessionId, createdAt);
+      this.logger.info('Created chat session successfully', {
+        userId: HARDCODED_USER_ID,
+        sessionId,
+      });
+      return result;
+    } catch (err) {
+      this.logger.error(`Failed to create chat session ${sessionId}`, err);
+      throw err;
+    }
   }
 
+  @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
   async getSession(sessionId: string): Promise<SessionSummary> {
-    const session = await this.repository.getSession(HARDCODED_USER_ID, sessionId);
-    if (session === null) throw new NotFoundException(`The session ${sessionId} does not exist.`);
-    return session;
+    try {
+      const session = await this.repository.getSession(HARDCODED_USER_ID, sessionId);
+      if (session === null) {
+        throw new NotFoundException(`The session ${sessionId} does not exist.`);
+      }
+      this.logger.info('Fetched chat session successfully', {
+        sessionId,
+        userId: HARDCODED_USER_ID,
+      });
+      return session;
+    } catch (err) {
+      this.logger.error(`Failed to fetch chat session ${sessionId}`, err);
+      throw err;
+    }
   }
 
+  @Timed({ metaData: (args) => ({ sessionId: args[0], title: args[1], userId: HARDCODED_USER_ID }) })
   async renameSession(sessionId: string, title: string): Promise<SessionSummary> {
-    const renamed = await this.repository.renameSession(HARDCODED_USER_ID, sessionId, title);
-    if (!renamed) throw new NotFoundException(`The session ${sessionId} does not exist.`);
-    return this.getSession(sessionId);
+    try {
+      const renamed = await this.repository.renameSession(HARDCODED_USER_ID, sessionId, title);
+      if (!renamed) {
+        throw new NotFoundException(`The session ${sessionId} does not exist.`);
+      }
+      const result = await this.getSession(sessionId);
+      this.logger.info('Renamed chat session successfully', {
+        sessionId,
+        title,
+        userId: HARDCODED_USER_ID,
+      });
+      return result;
+    } catch (err) {
+      this.logger.error(`Failed to rename chat session ${sessionId}`, err);
+      throw err;
+    }
   }
 
+  @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
   async deleteSession(sessionId: string): Promise<void> {
-    await this.repository.deleteSession(HARDCODED_USER_ID, sessionId);
+    try {
+      await this.repository.deleteSession(HARDCODED_USER_ID, sessionId);
+      this.logger.info('Deleted chat session successfully', {
+        sessionId,
+        userId: HARDCODED_USER_ID,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to delete chat session ${sessionId}`, err);
+      throw err;
+    }
   }
 
-  listMessages(sessionId: string): Promise<StoredMessage[]> {
-    return this.repository.listMessages(sessionId);
+  @Timed({ metaData: (args) => ({ sessionId: args[0] }) })
+  async listMessages(sessionId: string): Promise<StoredMessage[]> {
+    try {
+      const result = await this.repository.listMessages(sessionId);
+      this.logger.info('Listed chat messages successfully', {
+        sessionId,
+        count: result.length,
+      });
+      return result;
+    } catch (err) {
+      this.logger.error(`Failed to list chat messages for session ${sessionId}`, err);
+      throw err;
+    }
   }
 
+  @Timed({ metaData: (args) => ({ messageId: args[0], userId: HARDCODED_USER_ID }) })
   async deleteMessage(messageId: string): Promise<void> {
-    await this.repository.deleteMessage(HARDCODED_USER_ID, messageId);
+    try {
+      await this.repository.deleteMessage(HARDCODED_USER_ID, messageId);
+      this.logger.info('Deleted chat message successfully', {
+        messageId,
+        userId: HARDCODED_USER_ID,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to delete chat message ${messageId}`, err);
+      throw err;
+    }
   }
 
   /**
@@ -68,9 +151,13 @@ export class ChatService {
     sessionId: string,
     message: string,
     signal: AbortSignal,
+    prefetchedSession?: SessionSummary,
   ): AsyncIterable<ProtocolEvent> {
-    const session = await this.repository.getSession(HARDCODED_USER_ID, sessionId);
-    if (session === null) throw new NotFoundException(`The session ${sessionId} does not exist.`);
+    const session =
+      prefetchedSession ??
+      (await this.repository.getSession(HARDCODED_USER_ID, sessionId));
+    if (session === null)
+      throw new NotFoundException(`The session ${sessionId} does not exist.`);
 
     const history = toLangChainMessages(await this.repository.listMessages(sessionId));
 

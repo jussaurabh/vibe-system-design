@@ -1,8 +1,10 @@
+import { Writable } from 'node:stream';
 import { HumanMessage } from '@langchain/core/messages';
 import { NotFoundException } from '@nestjs/common';
 import type { ProtocolEvent } from '@langchain/langgraph';
 
 import type { StreamableAgent } from '../agent/agent.provider.js';
+import { buildLoggingParams, setLoggingParams } from '../logging/logging-config.js';
 import { HARDCODED_USER_ID } from './chat.constants.js';
 import { ChatService } from './chat.service.js';
 import { FakeChatRepository } from './fake-chat.repository.js';
@@ -188,5 +190,37 @@ describe('ChatService', () => {
 
     expect(agent.streamEvents).toHaveBeenCalled();
     expect(received).toEqual([event]);
+  });
+
+  it('a failed write is logged as one app line with the error', async () => {
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback): void {
+        lines.push(String(chunk));
+        callback();
+      },
+    });
+    setLoggingParams(buildLoggingParams({ NODE_ENV: 'development' }, stream));
+    const agent = stubAgent([]);
+    const { service, repository } = buildService(agent);
+    vi.spyOn(repository, 'appendMessage').mockRejectedValue(new Error('the database is down'));
+
+    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+      void _event;
+    }
+
+    const parsed = lines
+      .join('')
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const [line] = parsed;
+    const err = line?.['err'] as Record<string, unknown>;
+
+    expect(parsed).toHaveLength(1);
+    expect(line?.['level']).toBe('error');
+    expect(line?.['logType']).toBe('app');
+    expect(line?.['context']).toBe('ChatService');
+    expect(err['message']).toBe('the database is down');
   });
 });

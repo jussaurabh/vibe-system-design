@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { createDb } from '../db/db.client.js';
 import { chatMessages, chatSessions } from '../db/schema.js';
 import { DrizzleChatRepository } from './chat.repository.js';
-import { newMessageId, newSessionId } from './id.js';
+import { newMessageId, newSessionId } from './utils/id.js';
 
 const USER_ID = 'test-repository-user';
 

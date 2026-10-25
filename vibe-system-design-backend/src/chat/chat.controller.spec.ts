@@ -10,7 +10,7 @@ import { ChatController } from './chat.controller.js';
 import { CHAT_REPOSITORY } from './chat.repository.js';
 import { ChatService } from './chat.service.js';
 import { FakeChatRepository } from './fake-chat.repository.js';
-import { formatDoneFrame, formatErrorFrame, formatEventFrame } from './sse.js';
+import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../utils/sse.js';
 
 function passingService(events: ProtocolEvent[]) {
   return {

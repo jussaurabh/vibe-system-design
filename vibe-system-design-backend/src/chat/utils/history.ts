@@ -1,6 +1,6 @@
 import { AIMessage, HumanMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages';
 
-import type { StoredMessage } from './chat.types.js';
+import type { StoredMessage } from '../chat.types.js';
 
 function textOf(content: StoredMessage['content']): string {
   return content

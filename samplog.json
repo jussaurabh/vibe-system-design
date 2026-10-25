@@ -1,0 +1,17 @@
+{
+  "level": "info",
+  "time": 1792924379655,
+  "pid": 205,
+  "env": "development",
+  "service": "vibe-system-design-backend",
+  "logType": "app",
+  "context": "ChatService",
+  "requestId": "req_01M5S9XTEB3S8WE4W9Y5C47GKN",
+  "traceId": "trace_01M5S9XTEB3S8WE4W9Y5C47GKM",
+  "seq": 1,
+  "metaData": {
+    "sessionId": "ses_01M5CPJ7EMGW32AK3K1V0QTH93",
+    "userId": "user-local-dev"
+  },
+  "message": "Fetched chat session successfully"
+}

@@ -8,7 +8,7 @@ import { configureApp } from '../src/app-setup.js';
 import { CHAT_REPOSITORY } from '../src/chat/chat.repository.js';
 import { FakeChatRepository } from '../src/chat/fake-chat.repository.js';
 import { DB_CONNECTION } from '../src/db/db.module.js';
-import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/chat/sse.js';
+import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/utils/sse.js';
 
 const SESSION_ID = 'ses_test';
 
