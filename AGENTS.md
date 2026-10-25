@@ -13,6 +13,26 @@ Find the documentation links from `docs/xyflow-sitemap.xml`, for related queries
   file under `vibe-system-design-backend/src/`. Apply its utils placement rule to
   every module folder, not only to `chat`.
 
+## Monorepo
+
+- The root is a bun workspace. Run `bun install` from the repository root only.
+  One `bun.lock` exists, at the root. Never create a per-package lockfile.
+- Each project is a workspace package: `vibe-system-design-ui` and
+  `vibe-system-design-backend`. Each directory name is also its package name.
+- Run tasks through turbo from the root: `bun run build`, `bun run dev`,
+  `bun run lint`, `bun run typecheck`, `bun run test`, `bun run test:e2e`,
+  `bun run format`. Add `--filter=<package-name>` to `bunx turbo run <task>` to
+  target one package.
+- `turbo.json` runs in strict environment mode. A task receives only the
+  variables named in its `env` list. Add a variable to `turbo.json` before a
+  task reads it.
+- bun loads `.env` from the working directory. Turbo and
+  `bun run --filter=<package>` set the working directory to the package, so the
+  package `.env` loads. Do not run package tooling such as `drizzle-kit` from
+  the repository root.
+- Inspect the task graph without executing it with
+  `bunx turbo run <task> --dry=json`.
+
 ## Database conventions
 
 - Table names and column names are always `snake_case`. Never quote them.
