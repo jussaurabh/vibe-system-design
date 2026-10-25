@@ -2,3 +2,8 @@
 /graft/
 docs
 .superpowers
+
+# Workspace installs and Turborepo output.
+node_modules
+.turbo
+.DS_Store

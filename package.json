@@ -1,0 +1,15 @@
+{
+  "name": "vibe-system-design",
+  "private": true,
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "vibe-system-design-ui",
+    "vibe-system-design-backend"
+  ],
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "9.1.7"
+  }
+}

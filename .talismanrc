@@ -1,0 +1,6 @@
+fileignoreconfig:
+- filename: bun.lock
+  checksum: c399cd932975fc6b17dcd9aca3f74a7840c58a226e7e89280b8bd25d032ef47d
+- filename: .husky/pre-commit
+  checksum: 5e6bcec2c16ed6c280a75b032433c86908cc7d5b1cd9d30673ece3e72b116662
+version: "1.0"

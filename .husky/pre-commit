@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Run Talisman to scan staged files for secrets and block commit if any found
+talisman --githook pre-commit
