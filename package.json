@@ -7,9 +7,17 @@
     "vibe-system-design-backend"
   ],
   "scripts": {
-    "prepare": "husky"
+    "prepare": "husky",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "format": "turbo run format"
   },
   "devDependencies": {
-    "husky": "9.1.7"
+    "husky": "9.1.7",
+    "turbo": "2.11.10"
   }
 }

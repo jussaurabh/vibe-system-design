@@ -1,0 +1,39 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "env": ["VITE_*"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "env": [
+        "DATABASE_URL",
+        "PORT",
+        "NODE_ENV",
+        "OPENROUTER_BASE_URL",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_DEFAULT_MODEL",
+        "SUPABASE_URL",
+        "SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_SECRET_KEY",
+        "SUPABASE_JWKS_URL",
+        "LANGSMITH_TRACING",
+        "LANGSMITH_API_KEY"
+      ]
+    },
+    "lint": {},
+    "typecheck": {},
+    "test": {
+      "env": ["DATABASE_URL", "MIGRATION_DATABASE_URL", "NODE_ENV"]
+    },
+    "test:e2e": {
+      "env": ["DATABASE_URL", "NODE_ENV"]
+    },
+    "format": {
+      "cache": false
+    }
+  }
+}
