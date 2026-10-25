@@ -42,26 +42,179 @@
   padding: 8px 4px;
 }
 
-/* Message bubbles. User on the right in primary blue; assistant on the left on
-   the white card surface with a hairline border. */
+/* Message layout. The user message is a blue bubble on the right. The
+   assistant message is free text. It has no surface, no border, and no
+   padding, and it spans the full thread width. */
 .aui-message {
-  max-width: 85%;
-  padding: 8px 12px;
-  border-radius: 12px;
+  min-width: 0;
+  max-width: 100%;
   font-size: 15px;
-  line-height: 1.33;
-}
-
-.aui-message p {
-  margin: 0;
+  line-height: 1.5;
 }
 
 .aui-message--user {
   align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 12px;
 }
 
 .aui-message--assistant {
-  align-self: flex-start;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Markdown typography for both roles. Tailwind Preflight removes the default
+   margins, list markers, and heading sizes, so the chat restores them from the
+   design tokens. */
+.aui-message p {
+  margin: 0 0 8px;
+}
+
+.aui-message p:last-child,
+.aui-message ul:last-child,
+.aui-message ol:last-child,
+.aui-message pre:last-child,
+.aui-message table:last-child,
+.aui-message blockquote:last-child {
+  margin-bottom: 0;
+}
+
+.aui-message h1,
+.aui-message h2,
+.aui-message h3,
+.aui-message h4,
+.aui-message h5,
+.aui-message h6 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.aui-message h1 {
+  font-size: 1.5em;
+}
+
+.aui-message h2 {
+  font-size: 1.3em;
+}
+
+.aui-message h3 {
+  font-size: 1.15em;
+}
+
+.aui-message h4,
+.aui-message h5,
+.aui-message h6 {
+  font-size: 1em;
+}
+
+.aui-message ul,
+.aui-message ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.aui-message ul {
+  list-style: disc;
+}
+
+.aui-message ol {
+  list-style: decimal;
+}
+
+.aui-message li {
+  margin: 2px 0;
+}
+
+.aui-message a {
+  color: var(--primary, #0075de);
+  text-decoration: underline;
+}
+
+.aui-message strong {
+  font-weight: 600;
+}
+
+.aui-message code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--muted, #f6f5f4);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+}
+
+.aui-message pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border, #e6e6e6);
+  border-radius: 8px;
+  background: var(--muted, #f6f5f4);
+}
+
+.aui-message pre code {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+}
+
+.aui-message blockquote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--border, #e6e6e6);
+  color: var(--muted-foreground, #615d59);
+}
+
+.aui-message hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--border, #e6e6e6);
+}
+
+/* GFM tables. Cells wrap, so a wide table stays inside the 35% panel. */
+.aui-message table {
+  width: 100%;
+  margin: 0 0 8px;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.aui-message th,
+.aui-message td {
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #e6e6e6);
+  text-align: left;
+  vertical-align: top;
+}
+
+.aui-message th {
+  background: var(--muted, #f6f5f4);
+  font-weight: 600;
+}
+
+/* The blue user bubble hides a light code or table surface. */
+.aui-message--user a {
+  color: inherit;
+}
+
+.aui-message--user code,
+.aui-message--user pre,
+.aui-message--user th {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.aui-message--user pre,
+.aui-message--user th,
+.aui-message--user td {
+  border-color: rgba(255, 255, 255, 0.32);
 }
 
 /* Composer pinned to the bottom of the panel. */

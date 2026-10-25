@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "../ChatPanel";
@@ -16,6 +16,22 @@ const SESSION = {
   updatedAt: 1_700_000_000_000,
   lastMessageAt: null,
 };
+
+const MARKDOWN_TABLE = [
+  "| | Apple | Orange |",
+  "|---|---|---|",
+  "| **Taste** | Sweet to tart | Citrusy and tangy |",
+  "| **Color** | Red, green, or yellow | Orange |",
+].join("\n");
+
+const MARKDOWN_DOC = [
+  "## Differences",
+  "",
+  "- Sweet to tart",
+  "- Citrusy and tangy",
+  "",
+  "Use `apple` for baking.",
+].join("\n");
 
 /**
  * Build a fetch mock that answers the session routes and serves the given
@@ -145,7 +161,7 @@ describe("ChatPanel", () => {
     );
   });
 
-  it("renders user text in a primary bubble and streamed text in a card bubble", async () => {
+  it("renders the user message in a bubble and the assistant message without one", async () => {
     vi.stubGlobal(
       "fetch",
       mockApi({
@@ -170,6 +186,7 @@ describe("ChatPanel", () => {
     await user.keyboard("Hello there{Enter}");
 
     const userMsg = await screen.findByTestId("user-message");
+    expect(userMsg).toHaveClass("aui-message--user");
     expect(userMsg).toHaveClass("bg-primary");
     expect(getComputedStyle(userMsg).backgroundColor).toBe("rgb(0, 117, 222)");
 
@@ -178,9 +195,128 @@ describe("ChatPanel", () => {
       {},
       { timeout: 3000 },
     );
-    expect(assistantMsg).toHaveClass("bg-card");
-    expect(getComputedStyle(assistantMsg).backgroundColor).toBe("rgb(255, 255, 255)");
+    expect(assistantMsg).toHaveClass("aui-message--assistant");
+    expect(assistantMsg).not.toHaveClass("bg-card");
+    expect(assistantMsg).not.toHaveClass("text-card-foreground");
+    expect(assistantMsg).not.toHaveClass("border");
     expect(assistantMsg).toHaveTextContent("Hello from the backend");
+  });
+
+  it("hides reasoning and renders a chunked GFM table", async () => {
+    const chunks = [
+      MARKDOWN_TABLE.slice(0, 18),
+      MARKDOWN_TABLE.slice(18, 64),
+      MARKDOWN_TABLE.slice(64),
+    ];
+
+    vi.stubGlobal(
+      "fetch",
+      mockApi({
+        frames: [
+          dataFrame({ event: "message-start", id: "m-table", role: "ai" }),
+          dataFrame({
+            event: "content-block-start",
+            index: 0,
+            content: { type: "reasoning", reasoning: "" },
+          }),
+          dataFrame({
+            event: "content-block-delta",
+            index: 0,
+            delta: {
+              type: "reasoning-delta",
+              reasoning: "The user wants a table.",
+            },
+          }),
+          dataFrame({
+            event: "content-block-finish",
+            index: 0,
+            content: { type: "reasoning", reasoning: "The user wants a table." },
+          }),
+          dataFrame({
+            event: "content-block-start",
+            index: 1,
+            content: { type: "text", text: "" },
+          }),
+          ...chunks.map((text) =>
+            dataFrame({
+              event: "content-block-delta",
+              index: 1,
+              delta: { type: "text-delta", text },
+            }),
+          ),
+          dataFrame({
+            event: "content-block-finish",
+            index: 1,
+            content: { type: "text", text: MARKDOWN_TABLE },
+          }),
+          dataFrame({ event: "message-finish", reason: "stop" }),
+          DONE_FRAME,
+        ],
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Compare apples and oranges{Enter}");
+
+    const table = await screen.findByRole("table", {}, { timeout: 3000 });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((cell) => cell.textContent),
+    ).toEqual(["", "Apple", "Orange"]);
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(within(table).getByText("Sweet to tart")).toBeInTheDocument();
+    expect(screen.queryByText(/The user wants a table/)).not.toBeInTheDocument();
+  });
+
+  it("renders headings, lists, and inline code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockApi({
+        frames: [
+          dataFrame({ event: "message-start", id: "m-doc", role: "ai" }),
+          dataFrame({
+            event: "content-block-delta",
+            index: 0,
+            delta: { type: "text-delta", text: MARKDOWN_DOC },
+          }),
+          DONE_FRAME,
+        ],
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Describe the difference{Enter}");
+
+    // The runtime renders an optimistic placeholder while the stream runs and
+    // replaces it with the settled message. Re-query the document, so the
+    // assertions never read the stale placeholder node.
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("assistant-message")).toHaveTextContent(
+          "Differences",
+        ),
+      { timeout: 3000 },
+    );
+    const message = screen.getByTestId("assistant-message");
+    expect(
+      within(message).getByRole("heading", {
+        level: 2,
+        name: "Differences",
+      }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(message).getAllByRole("listitem")).toHaveLength(2),
+    );
+    expect(within(message).getByText("apple").tagName).toBe("CODE");
   });
 
   it("disables the composer while a stream is running", async () => {

@@ -9,12 +9,18 @@ import {
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { ArrowUp, Square } from "lucide-react";
+import remarkGfm from "remark-gfm";
 import "./chat.css";
+
+// GitHub tables and other GFM constructs need this plugin.
+const REMARK_PLUGINS = [remarkGfm];
 
 // Render every text part as Markdown. `smooth={false}` keeps the reveal
 // deterministic (important for tests) — Part 2 can re-enable streaming polish.
 function MarkdownText() {
-  return <MarkdownTextPrimitive smooth={false} />;
+  return (
+    <MarkdownTextPrimitive smooth={false} remarkPlugins={REMARK_PLUGINS} />
+  );
 }
 
 function UserMessage() {
@@ -32,7 +38,7 @@ function AssistantMessage() {
   return (
     <MessagePrimitive.Root
       data-testid="assistant-message"
-      className="aui-message aui-message--assistant bg-card text-card-foreground border border-border"
+      className="aui-message aui-message--assistant"
     >
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
     </MessagePrimitive.Root>
