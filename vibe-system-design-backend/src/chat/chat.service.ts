@@ -4,7 +4,6 @@ import type { ProtocolEvent } from '@langchain/langgraph';
 
 import { DEEP_AGENT, type StreamableAgent } from '../agent/agent.provider.js';
 import { HARDCODED_USER_ID } from './chat.constants.js';
-import { toLangChainMessages } from './utils/history.js';
 import { RunRecorder } from './chat.persistence.js';
 import { CHAT_REPOSITORY, type ChatRepository } from './chat.repository.js';
 import { cutTitle } from '../utils/cut-title.js';
@@ -47,7 +46,11 @@ export class ChatService {
     const sessionId = newSessionId();
     const createdAt = Date.now();
     try {
-      const result = await this.repository.createSession(HARDCODED_USER_ID, sessionId, createdAt);
+      const result = await this.repository.createSession(
+        HARDCODED_USER_ID,
+        sessionId,
+        createdAt,
+      );
       this.logger.info('Created chat session successfully', {
         userId: HARDCODED_USER_ID,
         sessionId,
@@ -59,10 +62,15 @@ export class ChatService {
     }
   }
 
-  @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
+  @Timed({
+    metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }),
+  })
   async getSession(sessionId: string): Promise<SessionSummary> {
     try {
-      const session = await this.repository.getSession(HARDCODED_USER_ID, sessionId);
+      const session = await this.repository.getSession(
+        HARDCODED_USER_ID,
+        sessionId,
+      );
       if (session === null) {
         throw new NotFoundException(`The session ${sessionId} does not exist.`);
       }
@@ -77,10 +85,23 @@ export class ChatService {
     }
   }
 
-  @Timed({ metaData: (args) => ({ sessionId: args[0], title: args[1], userId: HARDCODED_USER_ID }) })
-  async renameSession(sessionId: string, title: string): Promise<SessionSummary> {
+  @Timed({
+    metaData: (args) => ({
+      sessionId: args[0],
+      title: args[1],
+      userId: HARDCODED_USER_ID,
+    }),
+  })
+  async renameSession(
+    sessionId: string,
+    title: string,
+  ): Promise<SessionSummary> {
     try {
-      const renamed = await this.repository.renameSession(HARDCODED_USER_ID, sessionId, title);
+      const renamed = await this.repository.renameSession(
+        HARDCODED_USER_ID,
+        sessionId,
+        title,
+      );
       if (!renamed) {
         throw new NotFoundException(`The session ${sessionId} does not exist.`);
       }
@@ -97,7 +118,9 @@ export class ChatService {
     }
   }
 
-  @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
+  @Timed({
+    metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }),
+  })
   async deleteSession(sessionId: string): Promise<void> {
     try {
       await this.repository.deleteSession(HARDCODED_USER_ID, sessionId);
@@ -121,12 +144,17 @@ export class ChatService {
       });
       return result;
     } catch (err) {
-      this.logger.error(`Failed to list chat messages for session ${sessionId}`, err);
+      this.logger.error(
+        `Failed to list chat messages for session ${sessionId}`,
+        err,
+      );
       throw err;
     }
   }
 
-  @Timed({ metaData: (args) => ({ messageId: args[0], userId: HARDCODED_USER_ID }) })
+  @Timed({
+    metaData: (args) => ({ messageId: args[0], userId: HARDCODED_USER_ID }),
+  })
   async deleteMessage(messageId: string): Promise<void> {
     try {
       await this.repository.deleteMessage(HARDCODED_USER_ID, messageId);
@@ -143,9 +171,8 @@ export class ChatService {
   /**
    * Run the agent for one new user message and stream its protocol events.
    *
-   * The database is the source of truth for the history. The request carries
-   * only the new message, and the service loads the rest of the conversation
-   * from the repository before the agent runs.
+   * The agent input carries only the new message. The checkpointer restores
+   * the rest of the conversation with the `thread_id` of the run config.
    */
   async *stream(
     sessionId: string,
@@ -159,8 +186,6 @@ export class ChatService {
     if (session === null)
       throw new NotFoundException(`The session ${sessionId} does not exist.`);
 
-    const rows = await this.repository.listMessages(sessionId);
-    const history = toLangChainMessages(rows);
     const userMessageId = newMessageId();
 
     // The question is stored before the agent runs. A crash keeps the question.
@@ -177,26 +202,26 @@ export class ChatService {
         createdAt: Date.now(),
       });
       if (session.title === '') {
-        await this.repository.renameSession(HARDCODED_USER_ID, sessionId, cutTitle(message));
+        await this.repository.renameSession(
+          HARDCODED_USER_ID,
+          sessionId,
+          cutTitle(message),
+        );
       }
     } catch (err) {
       // A write failure never breaks the stream.
-      this.logger.error(`The user message of session ${sessionId} was not stored.`, err);
+      this.logger.error(
+        `The user message of session ${sessionId} was not stored.`,
+        err,
+      );
     }
 
-    history.push(new HumanMessage(message));
-
-    // A tool row is a log for the reader, not a message for the agent.
-    const replayedIds = rows
-      .filter((row) => row.senderType !== 'tool')
-      .map((row) => row.id);
-    this.logger.info('Loaded the chat history for the agent', {
+    this.logger.info('Sent the new user message to the agent', {
       sessionId,
       userId: HARDCODED_USER_ID,
-      replayedCount: replayedIds.length,
-      skippedToolCount: rows.length - replayedIds.length,
-      totalCount: history.length,
-      messageIds: [...replayedIds, userMessageId],
+      historySource: 'checkpoint',
+      inputCount: 1,
+      userMessageId,
     });
 
     // The rows are written one after the other. Two writes in parallel would
@@ -222,14 +247,17 @@ export class ChatService {
             });
           } catch (err) {
             // A write failure never breaks the stream.
-            this.logger.error(`A chat message of session ${sessionId} was not stored.`, err);
+            this.logger.error(
+              `A chat message of session ${sessionId} was not stored.`,
+              err,
+            );
           }
         });
       },
     });
 
     const events = await this.agent.streamEvents(
-      { messages: history },
+      { messages: [new HumanMessage(message)] },
       {
         version: 'v3',
         configurable: {

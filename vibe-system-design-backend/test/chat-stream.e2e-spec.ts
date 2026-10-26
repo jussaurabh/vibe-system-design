@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { HumanMessage } from '@langchain/core/messages';
 import type { ProtocolEvent } from '@langchain/langgraph';
 import { AppModule } from '../src/app.module.js';
 import { AGENT_CONFIG, DEEP_AGENT } from '../src/agent/agent.provider.js';
@@ -8,14 +8,36 @@ import { configureApp } from '../src/app-setup.js';
 import { CHAT_REPOSITORY } from '../src/chat/chat.repository.js';
 import { FakeChatRepository } from '../src/chat/fake-chat.repository.js';
 import { DB_CONNECTION } from '../src/db/db.module.js';
-import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/utils/sse.js';
+import {
+  formatDoneFrame,
+  formatErrorFrame,
+  formatEventFrame,
+} from '../src/utils/sse.js';
 import { overrideCheckpointer } from './fake-checkpointer.js';
+import type { StoredMessage } from '../src/chat/chat.types.js';
 
 const SESSION_ID = 'ses_test';
 
 const events: ProtocolEvent[] = [
-  { type: 'event', seq: 1, method: 'messages', params: { namespace: [], timestamp: 0, data: { event: 'message-start' } } },
-  { type: 'event', seq: 2, method: 'messages', params: { namespace: [], timestamp: 1, data: { event: 'content-block-delta', delta: { type: 'text-delta', text: 'hi' } } } },
+  {
+    type: 'event',
+    seq: 1,
+    method: 'messages',
+    params: { namespace: [], timestamp: 0, data: { event: 'message-start' } },
+  },
+  {
+    type: 'event',
+    seq: 2,
+    method: 'messages',
+    params: {
+      namespace: [],
+      timestamp: 1,
+      data: {
+        event: 'content-block-delta',
+        delta: { type: 'text-delta', text: 'hi' },
+      },
+    },
+  },
 ];
 
 function deepAgentStub(eventsOrError: ProtocolEvent[] | Error) {
@@ -84,7 +106,11 @@ describe('POST /v1/chat/stream (e2e)', () => {
         type: 'event',
         seq: 0,
         method: 'lifecycle',
-        params: { namespace: [], timestamp: 0, data: { event: 'running', graph_name: 'root' } },
+        params: {
+          namespace: [],
+          timestamp: 0,
+          data: { event: 'running', graph_name: 'root' },
+        },
       },
       {
         type: 'event',
@@ -93,7 +119,10 @@ describe('POST /v1/chat/stream (e2e)', () => {
         params: {
           namespace: [],
           timestamp: 1,
-          data: { event: 'content-block-delta', delta: { type: 'text-delta', text: 'hi' } },
+          data: {
+            event: 'content-block-delta',
+            delta: { type: 'text-delta', text: 'hi' },
+          },
         },
       },
       {
@@ -110,7 +139,11 @@ describe('POST /v1/chat/stream (e2e)', () => {
         type: 'event',
         seq: 3,
         method: 'lifecycle',
-        params: { namespace: [], timestamp: 3, data: { event: 'completed', graph_name: 'root' } },
+        params: {
+          namespace: [],
+          timestamp: 3,
+          data: { event: 'completed', graph_name: 'root' },
+        },
       },
     ] as ProtocolEvent[];
     const blocked = {
@@ -125,7 +158,9 @@ describe('POST /v1/chat/stream (e2e)', () => {
       .post('/v1/chat/stream')
       .send({ sessionId: SESSION_ID, message: 'hi' });
 
-    expect(response.text).toBe(`${allowed.map(formatEventFrame).join('')}${formatDoneFrame()}`);
+    expect(response.text).toBe(
+      `${allowed.map(formatEventFrame).join('')}${formatDoneFrame()}`,
+    );
     expect(response.text).not.toContain('"method":"values"');
     await app.close();
   });
@@ -152,20 +187,29 @@ describe('POST /v1/chat/stream (e2e)', () => {
     await app.close();
   });
 
-  it('replays the stored system message to the agent', async () => {
+  it('sends only the new user message to the agent, not the stored history', async () => {
     const agent = deepAgentStub(events);
     const repository = fakeRepository();
-    repository.addMessage({
-      id: 'msg_system',
-      sessionId: SESSION_ID,
-      createdAt: 1000,
-      seq: 1,
-      senderType: 'system',
-      content: [{ type: 'text', text: 'be nice' }],
-      status: 'complete',
-      tokenCount: null,
-      modelName: null,
-      latencyMs: null,
+    const storedSenders: StoredMessage['senderType'][] = [
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'system',
+    ];
+    storedSenders.forEach((senderType, index) => {
+      repository.addMessage({
+        id: `msg_seed_${index + 1}`,
+        sessionId: SESSION_ID,
+        createdAt: 1000 + index,
+        seq: index + 1,
+        senderType,
+        content: [{ type: 'text', text: `stored message ${index + 1}` }],
+        status: 'complete',
+        tokenCount: null,
+        modelName: null,
+        latencyMs: null,
+      });
     });
 
     const moduleFixture = await overrideCheckpointer(
@@ -173,7 +217,11 @@ describe('POST /v1/chat/stream (e2e)', () => {
         .overrideProvider(DEEP_AGENT)
         .useValue(agent)
         .overrideProvider(AGENT_CONFIG)
-        .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
+        .useValue({
+          baseURL: 'http://localhost',
+          apiKey: 'test',
+          model: 'test',
+        })
         .overrideProvider(CHAT_REPOSITORY)
         .useValue(repository)
         .overrideProvider(DB_CONNECTION)
@@ -185,10 +233,21 @@ describe('POST /v1/chat/stream (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/v1/chat/stream')
-      .send({ sessionId: SESSION_ID, message: 'hi' });
+      .send({ sessionId: SESSION_ID, message: 'the new user text' });
 
+    expect(agent.streamEvents).toHaveBeenCalledTimes(1);
+    const [input, runConfig] = agent.streamEvents.mock.calls[0] as unknown as [
+      { messages: HumanMessage[] },
+      { version: string },
+    ];
+    expect(Object.keys(input)).toEqual(['messages']);
+    const { messages } = input;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toBeInstanceOf(HumanMessage);
+    expect(messages[0].content).toBe('the new user text');
+    expect(runConfig).toEqual(expect.objectContaining({ version: 'v3' }));
     expect(agent.streamEvents).toHaveBeenCalledWith(
-      { messages: [expect.any(SystemMessage), expect.any(HumanMessage)] },
+      { messages: [expect.any(HumanMessage)] },
       expect.objectContaining({ version: 'v3' }),
     );
     await app.close();
