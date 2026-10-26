@@ -7,3 +7,4 @@ docs
 node_modules
 .turbo
 .DS_Store
+talisman_report

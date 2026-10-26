@@ -2,6 +2,7 @@ import { Inject, Module, type OnModuleDestroy } from '@nestjs/common';
 import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 import { Pool } from 'pg';
 
+import { AppLogger } from '../logging/app-logger.js';
 import { loadCheckpointerConfig } from './checkpointer.config.js';
 import type { CheckpointerConfig } from './checkpointer.config.js';
 import {
@@ -11,6 +12,8 @@ import {
   POSTGRES_CHECKPOINTER,
 } from './checkpointer.provider.js';
 
+const poolLogger = new AppLogger('CheckpointerPool');
+
 @Module({
   providers: [
     {
@@ -19,12 +22,19 @@ import {
     },
     {
       provide: PG_POOL,
-      useFactory: (config: CheckpointerConfig): Pool =>
-        new Pool({
+      useFactory: (config: CheckpointerConfig): Pool => {
+        const pool = new Pool({
           connectionString: config.connectionString,
           max: 5,
           idleTimeoutMillis: 30_000,
-        }),
+        });
+        // pg-pool re-emits errors of idle clients; an uncaught 'error' event
+        // would throw and take the process down with the connection gone.
+        pool.on('error', (err: Error) => {
+          poolLogger.error('A checkpoint pool client errored', err);
+        });
+        return pool;
+      },
       inject: [CHECKPOINTER_CONFIG],
     },
     {

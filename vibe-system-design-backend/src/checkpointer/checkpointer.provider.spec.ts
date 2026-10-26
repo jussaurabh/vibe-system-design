@@ -20,11 +20,7 @@ function fakePool() {
     query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
     connect: vi.fn().mockResolvedValue(client),
   };
-  const queryTexts = () => [
-    ...pool.query.mock.calls.map((call) => call[0] as string),
-    ...client.query.mock.calls.map((call) => call[0] as string),
-  ];
-  return { pool, client, queryTexts };
+  return { pool, client };
 }
 
 const config = {
@@ -44,20 +40,50 @@ describe('createCheckpointer', () => {
     expect(checkpointer).toBeInstanceOf(PostgresSaver);
   });
 
-  it('issues migration SQL qualified with the ai chat schema', async () => {
-    const { pool, queryTexts } = fakePool();
+  it('runs setup against the migrated table inside the ai chat schema', async () => {
+    const { pool, client } = fakePool();
 
     await createCheckpointer(pool as unknown as Pool, config);
 
+    // PostgresSaver.setup() quotes the schema name; the pool surface only
+    // covers hardening, since setup queries run through the connected client.
     expect(
-      queryTexts().some((text) =>
-        text.includes('vibe_system_design_ai_chat.checkpoint_migrations'),
-      ),
+      client.query.mock.calls
+        .map((call) => call[0] as string)
+        .some((text) =>
+          text.includes(
+            'SELECT v FROM "vibe_system_design_ai_chat".checkpoint_migrations',
+          ),
+        ),
     ).toBe(true);
   });
 
+  it('runs setup before the hardening ALTERs', async () => {
+    const { pool, client } = fakePool();
+    const clientQueryOrder: string[] = [];
+    const poolQueryOrder: string[] = [];
+    client.query.mockImplementation(async (text: unknown) => {
+      clientQueryOrder.push(String(text));
+      return { rows: [] };
+    });
+    pool.query.mockImplementation(async (text: unknown) => {
+      poolQueryOrder.push(String(text));
+      return { rows: [] };
+    });
+
+    await createCheckpointer(pool as unknown as Pool, config);
+
+    expect(clientQueryOrder.length).toBeGreaterThan(0);
+    expect(poolQueryOrder.length).toBeGreaterThan(0);
+    expect(clientQueryOrder.length).toBeGreaterThanOrEqual(1);
+    // The first setup statement happens before any ALTER from the hardening pass.
+    expect(client.query.mock.invocationCallOrder[0]).toBeLessThan(
+      pool.query.mock.invocationCallOrder[0],
+    );
+  });
+
   it('hardens the four checkpoint tables', async () => {
-    const { pool, queryTexts } = fakePool();
+    const { pool } = fakePool();
     const tables = [
       'checkpoints',
       'checkpoint_blobs',
@@ -67,8 +93,11 @@ describe('createCheckpointer', () => {
 
     await createCheckpointer(pool as unknown as Pool, config);
 
+    // Hardening runs on the pool surface; the setup queries run on the client.
+    const text = pool.query.mock.calls
+      .map((call) => call[0] as string)
+      .join('\n');
     for (const table of tables) {
-      const text = queryTexts().join('\n');
       expect(text).toContain(
         `ALTER TABLE vibe_system_design_ai_chat.${table} ENABLE ROW LEVEL SECURITY`,
       );

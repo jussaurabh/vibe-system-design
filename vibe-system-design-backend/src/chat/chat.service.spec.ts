@@ -4,7 +4,10 @@ import { NotFoundException } from '@nestjs/common';
 import type { ProtocolEvent } from '@langchain/langgraph';
 
 import type { StreamableAgent } from '../agent/agent.provider.js';
-import { buildLoggingParams, setLoggingParams } from '../logging/logging-config.js';
+import {
+  buildLoggingParams,
+  setLoggingParams,
+} from '../logging/logging-config.js';
 import { HARDCODED_USER_ID } from './chat.constants.js';
 import { ChatService } from './chat.service.js';
 import { FakeChatRepository } from './fake-chat.repository.js';
@@ -21,11 +24,19 @@ function stubAgent(events: ProtocolEvent[]) {
 }
 
 function messageEvent(method: string, data: unknown): ProtocolEvent {
-  return { type: 'event', seq: 1, method, params: { namespace: [], timestamp: 0, data } } as ProtocolEvent;
+  return {
+    type: 'event',
+    seq: 1,
+    method,
+    params: { namespace: [], timestamp: 0, data },
+  } as ProtocolEvent;
 }
 
 /** Build a service with a fake repository that holds one session. */
-function buildService(agent: StreamableAgent, repository = new FakeChatRepository()) {
+function buildService(
+  agent: StreamableAgent,
+  repository = new FakeChatRepository(),
+) {
   repository.addSession({
     id: 'ses_test',
     title: '',
@@ -41,7 +52,11 @@ describe('ChatService', () => {
     const agent = stubAgent([]);
     const { service, repository } = buildService(agent);
 
-    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+    for await (const _event of service.stream(
+      'ses_test',
+      'hi',
+      new AbortController().signal,
+    )) {
       // The stream carries no event in this test.
     }
 
@@ -52,7 +67,9 @@ describe('ChatService', () => {
 
     const received = agent.streamEvents.mock.calls[0][0];
     expect(received.messages.at(-1)).toBeInstanceOf(HumanMessage);
-    expect(JSON.stringify((received.messages.at(-1) as HumanMessage).content)).toBe('"hi"');
+    expect(
+      JSON.stringify((received.messages.at(-1) as HumanMessage).content),
+    ).toBe('"hi"');
   });
 
   it('an unknown session id is a 404', async () => {
@@ -60,7 +77,11 @@ describe('ChatService', () => {
     const service = new ChatService(agent, new FakeChatRepository());
 
     await expect(async () => {
-      for await (const _event of service.stream('ses_missing', 'hi', new AbortController().signal)) {
+      for await (const _event of service.stream(
+        'ses_missing',
+        'hi',
+        new AbortController().signal,
+      )) {
         // The stream never starts.
       }
     }).rejects.toBeInstanceOf(NotFoundException);
@@ -71,7 +92,11 @@ describe('ChatService', () => {
     const agent = stubAgent([]);
     const { service } = buildService(agent);
 
-    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+    for await (const _event of service.stream(
+      'ses_test',
+      'hi',
+      new AbortController().signal,
+    )) {
       // The stream carries no event in this test.
     }
 
@@ -96,7 +121,11 @@ describe('ChatService', () => {
     ]);
     const { service, repository } = buildService(agent);
 
-    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+    for await (const _event of service.stream(
+      'ses_test',
+      'hi',
+      new AbortController().signal,
+    )) {
       // The stream ends with the assistant message still open.
     }
 
@@ -111,7 +140,11 @@ describe('ChatService', () => {
     const agent = stubAgent([]);
     const { service, repository } = buildService(agent);
 
-    for await (const _event of service.stream('ses_test', 'a'.repeat(200), new AbortController().signal)) {
+    for await (const _event of service.stream(
+      'ses_test',
+      'a'.repeat(200),
+      new AbortController().signal,
+    )) {
       // The stream carries no event in this test.
     }
 
@@ -140,7 +173,11 @@ describe('ChatService', () => {
     const { service, repository } = buildService(agent);
 
     await expect(async () => {
-      for await (const _event of service.stream('ses_test', 'hi', controller.signal)) {
+      for await (const _event of service.stream(
+        'ses_test',
+        'hi',
+        controller.signal,
+      )) {
         // The stream ends with the run.
       }
     }).rejects.toThrow('Abort');
@@ -168,7 +205,11 @@ describe('ChatService', () => {
     const { service, repository } = buildService(agent);
 
     await expect(async () => {
-      for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+      for await (const _event of service.stream(
+        'ses_test',
+        'hi',
+        new AbortController().signal,
+      )) {
         // The stream ends with the run.
       }
     }).rejects.toThrow('the model exploded');
@@ -178,13 +219,23 @@ describe('ChatService', () => {
     expect(reply?.status).toBe('error');
   });
 
-  it('a database write failure does not break the stream', async () => {    const event = messageEvent('messages', { event: 'message-start', id: 'm-1' });
+  it('a database write failure does not break the stream', async () => {
+    const event = messageEvent('messages', {
+      event: 'message-start',
+      id: 'm-1',
+    });
     const agent = stubAgent([event]);
     const { service, repository } = buildService(agent);
-    vi.spyOn(repository, 'appendMessage').mockRejectedValue(new Error('the database is down'));
+    vi.spyOn(repository, 'appendMessage').mockRejectedValue(
+      new Error('the database is down'),
+    );
 
     const received: ProtocolEvent[] = [];
-    for await (const receivedEvent of service.stream('ses_test', 'hi', new AbortController().signal)) {
+    for await (const receivedEvent of service.stream(
+      'ses_test',
+      'hi',
+      new AbortController().signal,
+    )) {
       received.push(receivedEvent);
     }
 
@@ -203,9 +254,15 @@ describe('ChatService', () => {
     setLoggingParams(buildLoggingParams({ NODE_ENV: 'development' }, stream));
     const agent = stubAgent([]);
     const { service, repository } = buildService(agent);
-    vi.spyOn(repository, 'appendMessage').mockRejectedValue(new Error('the database is down'));
+    vi.spyOn(repository, 'appendMessage').mockRejectedValue(
+      new Error('the database is down'),
+    );
 
-    for await (const _event of service.stream('ses_test', 'hi', new AbortController().signal)) {
+    for await (const _event of service.stream(
+      'ses_test',
+      'hi',
+      new AbortController().signal,
+    )) {
       void _event;
     }
 
@@ -214,13 +271,17 @@ describe('ChatService', () => {
       .split('\n')
       .filter((line) => line.trim() !== '')
       .map((line) => JSON.parse(line) as Record<string, unknown>);
-    const [line] = parsed;
+    // Only the error line is under test; other app lines (like the history
+    // load) may appear around it.
+    const [line] = parsed.filter(
+      (candidate) =>
+        candidate['level'] === 'error' &&
+        candidate['logType'] === 'app' &&
+        candidate['context'] === 'ChatService',
+    );
     const err = line?.['err'] as Record<string, unknown>;
 
-    expect(parsed).toHaveLength(1);
-    expect(line?.['level']).toBe('error');
-    expect(line?.['logType']).toBe('app');
-    expect(line?.['context']).toBe('ChatService');
+    expect(line).toBeDefined();
     expect(err['message']).toBe('the database is down');
   });
 });

@@ -11,6 +11,7 @@
       "persistent": true,
       "env": [
         "DATABASE_URL",
+        "CHECKPOINTER_SCHEMA",
         "PORT",
         "NODE_ENV",
         "OPENROUTER_BASE_URL",
@@ -27,10 +28,15 @@
     "lint": {},
     "typecheck": {},
     "test": {
-      "env": ["DATABASE_URL", "MIGRATION_DATABASE_URL", "NODE_ENV"]
+      "env": [
+        "DATABASE_URL",
+        "CHECKPOINTER_SCHEMA",
+        "MIGRATION_DATABASE_URL",
+        "NODE_ENV"
+      ]
     },
     "test:e2e": {
-      "env": ["DATABASE_URL", "NODE_ENV"]
+      "env": ["DATABASE_URL", "CHECKPOINTER_SCHEMA", "NODE_ENV"]
     },
     "format": {
       "cache": false
