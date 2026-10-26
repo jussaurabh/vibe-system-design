@@ -1,3 +1,5 @@
+import type { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
+
 import { createStreamableAgent } from './agent.provider.js';
 
 const createDeepAgentMock = vi.hoisted(() => vi.fn());
@@ -12,6 +14,8 @@ const config = {
   model: 'openai/gpt-4.1-mini',
 };
 
+const checkpointer = {} as PostgresSaver;
+
 describe('createStreamableAgent', () => {
   it('builds ChatOpenAI on the OpenRouter base URL and hands it to createDeepAgent', () => {
     const modelInstance = { tag: 'model' };
@@ -22,7 +26,7 @@ describe('createStreamableAgent', () => {
     });
     createDeepAgentMock.mockReturnValue({ streamEvents: vi.fn() });
 
-    createStreamableAgent(config);
+    createStreamableAgent(config, checkpointer);
 
     expect(chatOpenAIMock).toHaveBeenCalledWith({
       model: 'openai/gpt-4.1-mini',
@@ -37,17 +41,28 @@ describe('createStreamableAgent', () => {
           'You are a friendly, concise assistant. Chat naturally with the user and keep answers short.',
       }),
     );
+    const deepAgentOptions = createDeepAgentMock.mock.calls.at(-1)?.[0];
+    expect(deepAgentOptions?.checkpointer).toBe(checkpointer);
   });
 
   it('delegates streamEvents to the deep agent unchanged', async () => {
     const fakeRun = { [Symbol.asyncIterator]: async function* () {} };
     const inner = vi.fn().mockResolvedValue(fakeRun);
     createDeepAgentMock.mockReturnValue({ streamEvents: inner });
-    const agent = createStreamableAgent(config);
+    const agent = createStreamableAgent(config, checkpointer);
     const signal = new AbortController().signal;
-    const cfg = { version: 'v3' as const, configurable: { thread_id: 't' }, signal };
+    const cfg = {
+      version: 'v3' as const,
+      configurable: { thread_id: 't' },
+      signal,
+    };
 
-    await expect(agent.streamEvents({ messages: [] }, cfg)).resolves.toBe(fakeRun);
+    await expect(agent.streamEvents({ messages: [] }, cfg)).resolves.toBe(
+      fakeRun,
+    );
     expect(inner).toHaveBeenCalledWith({ messages: [] }, cfg);
+    expect(createDeepAgentMock.mock.calls.at(-1)?.[0].checkpointer).toBe(
+      checkpointer,
+    );
   });
 });
