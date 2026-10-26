@@ -159,12 +159,14 @@ export class ChatService {
     if (session === null)
       throw new NotFoundException(`The session ${sessionId} does not exist.`);
 
-    const history = toLangChainMessages(await this.repository.listMessages(sessionId));
+    const rows = await this.repository.listMessages(sessionId);
+    const history = toLangChainMessages(rows);
+    const userMessageId = newMessageId();
 
     // The question is stored before the agent runs. A crash keeps the question.
     try {
       await this.repository.appendMessage({
-        id: newMessageId(),
+        id: userMessageId,
         sessionId,
         senderType: 'user',
         content: [{ type: 'text', text: message }],
@@ -183,6 +185,19 @@ export class ChatService {
     }
 
     history.push(new HumanMessage(message));
+
+    // A tool row is a log for the reader, not a message for the agent.
+    const replayedIds = rows
+      .filter((row) => row.senderType !== 'tool')
+      .map((row) => row.id);
+    this.logger.info('Loaded the chat history for the agent', {
+      sessionId,
+      userId: HARDCODED_USER_ID,
+      replayedCount: replayedIds.length,
+      skippedToolCount: rows.length - replayedIds.length,
+      totalCount: history.length,
+      messageIds: [...replayedIds, userMessageId],
+    });
 
     // The rows are written one after the other. Two writes in parallel would
     // race for the next seq of the session.
