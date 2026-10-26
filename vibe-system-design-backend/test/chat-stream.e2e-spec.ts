@@ -9,6 +9,7 @@ import { CHAT_REPOSITORY } from '../src/chat/chat.repository.js';
 import { FakeChatRepository } from '../src/chat/fake-chat.repository.js';
 import { DB_CONNECTION } from '../src/db/db.module.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/utils/sse.js';
+import { overrideCheckpointer } from './fake-checkpointer.js';
 
 const SESSION_ID = 'ses_test';
 
@@ -42,18 +43,19 @@ function fakeRepository(): FakeChatRepository {
 }
 
 async function createApp(agent: unknown) {
-  const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(DEEP_AGENT)
-    .useValue(agent)
-    .overrideProvider(AGENT_CONFIG)
-    .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
-    .overrideProvider(CHAT_REPOSITORY)
-    .useValue(fakeRepository())
-    // The database module is overridden too, so the test needs no database
-    // and no DATABASE_URL.
-    .overrideProvider(DB_CONNECTION)
-    .useValue({ db: {}, close: async () => {} })
-    .compile();
+  // The database module and the checkpointer module are overridden too, so
+  // the test needs no database and no DATABASE_URL.
+  const moduleFixture = await overrideCheckpointer(
+    Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(DEEP_AGENT)
+      .useValue(agent)
+      .overrideProvider(AGENT_CONFIG)
+      .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
+      .overrideProvider(CHAT_REPOSITORY)
+      .useValue(fakeRepository())
+      .overrideProvider(DB_CONNECTION)
+      .useValue({ db: {}, close: async () => {} }),
+  ).compile();
   const app = moduleFixture.createNestApplication();
   configureApp(app);
   await app.init();
@@ -166,16 +168,17 @@ describe('POST /v1/chat/stream (e2e)', () => {
       latencyMs: null,
     });
 
-    const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(DEEP_AGENT)
-      .useValue(agent)
-      .overrideProvider(AGENT_CONFIG)
-      .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
-      .overrideProvider(CHAT_REPOSITORY)
-      .useValue(repository)
-      .overrideProvider(DB_CONNECTION)
-      .useValue({ db: {}, close: async () => {} })
-      .compile();
+    const moduleFixture = await overrideCheckpointer(
+      Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(DEEP_AGENT)
+        .useValue(agent)
+        .overrideProvider(AGENT_CONFIG)
+        .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
+        .overrideProvider(CHAT_REPOSITORY)
+        .useValue(repository)
+        .overrideProvider(DB_CONNECTION)
+        .useValue({ db: {}, close: async () => {} }),
+    ).compile();
     const app = moduleFixture.createNestApplication();
     configureApp(app);
     await app.init();

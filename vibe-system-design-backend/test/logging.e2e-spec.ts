@@ -13,6 +13,7 @@ import { FakeChatRepository } from './../src/chat/fake-chat.repository.js';
 import { DB_CONNECTION } from './../src/db/db.module.js';
 import { buildLoggingParams, setLoggingParams } from './../src/logging/logging-config.js';
 import { AppLogger } from './../src/logging/app-logger.js';
+import { overrideCheckpointer } from './fake-checkpointer.js';
 
 const lines: string[] = [];
 
@@ -43,18 +44,21 @@ describe('logging (e2e)', () => {
 
   beforeEach(async () => {
     lines.length = 0;
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-      .overrideProvider(DEEP_AGENT)
-      .useValue({ streamEvents: vi.fn() })
-      .overrideProvider(AGENT_CONFIG)
-      .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
-      .overrideProvider(CHAT_REPOSITORY)
-      .useValue(new FakeChatRepository())
-      .overrideProvider(DB_CONNECTION)
-      .useValue({ db: {}, close: async () => {} })
-      .compile();
+    // The database module and the checkpointer module are overridden too, so
+    // the test needs no database and no DATABASE_URL.
+    const moduleFixture: TestingModule = await overrideCheckpointer(
+      Test.createTestingModule({
+        imports: [AppModule],
+      })
+        .overrideProvider(DEEP_AGENT)
+        .useValue({ streamEvents: vi.fn() })
+        .overrideProvider(AGENT_CONFIG)
+        .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
+        .overrideProvider(CHAT_REPOSITORY)
+        .useValue(new FakeChatRepository())
+        .overrideProvider(DB_CONNECTION)
+        .useValue({ db: {}, close: async () => {} }),
+    ).compile();
 
     app = moduleFixture.createNestApplication();
     app.useLogger(app.get(Logger));

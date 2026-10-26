@@ -1,6 +1,12 @@
 fileignoreconfig:
 - filename: bun.lock
-  checksum: ebec26688d1f58eb72611d6ba97dd06608924b938b422719079f20b4c3c9f527
+  checksum: e2d64aeb8539e9a25a532c85188f3d26c7cf29b9c2a2262b5ba58cf22f7dbc7a
 - filename: .husky/pre-commit
   checksum: 5e6bcec2c16ed6c280a75b032433c86908cc7d5b1cd9d30673ece3e72b116662
+- filename: vibe-system-design-backend/test/logging.e2e-spec.ts
+  checksum: 19a6879c4d9b1c0620856d70a7116bb3a53abd50a3efa1dd9ab8f0ddd1cd19f8
+- filename: vibe-system-design-backend/test/chat-stream.e2e-spec.ts
+  checksum: a42d1a5ca1f76b75fc6727be832d3ea1fcaff7b67da10cfa3206dac7d72d7108
+- filename: vibe-system-design-backend/src/checkpointer/checkpointer.provider.spec.ts
+  checksum: 4bc95686cdc497776f35082a85ab520793487433663d1552aceaedb69750e541
 version: "1.0"
