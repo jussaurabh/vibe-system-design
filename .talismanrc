@@ -16,7 +16,7 @@ fileignoreconfig:
 - filename: vibe-system-design-agent/.env.example
   checksum: 22164b3c4b904638255bf335876acc3cb7ae3b5ab8a48f4d42af19b5fc9c9398
 - filename: vibe-system-design-agent/.env.docker.example
-  checksum: e42e7fc7ba76dfd228556f69e53683ba9f8dab0fa7bad8af7555f06a8ae8f621
+  checksum: 0ef6725a0670f798fd650b2855fcce1e35e1b745540433f17869eff8be7a05ad
 - filename: vibe-system-design-agent/src/agent.ts
   checksum: dbf4ee1ded6ec22187418fb080e074f90c3379ca56116f9189ec24b2970f34e5
 - filename: vibe-system-design-agent/src/config.spec.ts
