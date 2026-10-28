@@ -8,3 +8,6 @@ node_modules
 .turbo
 .DS_Store
 talisman_report
+
+# Local secrets — commit .env.example only.
+.env

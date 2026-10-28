@@ -15,6 +15,7 @@
     "deepagents": "^1.15.1"
   },
   "devDependencies": {
+    "@langchain/langgraph-cli": "^1.5.6",
     "@types/node": "^24.0.0",
     "oxlint": "^1.81.0",
     "oxlint-tsgolint": "^7.0.2001",
