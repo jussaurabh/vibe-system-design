@@ -1,12 +1,16 @@
 services:
   agent-server:
     image: vibe-agent-graph:dev
+    # Built locally with `langgraphjs build -t vibe-agent-graph:dev`. Never
+    # pull: the tag exists only on this machine, and a pull attempt would hit
+    # the registry with stale credentials.
+    pull_policy: never
     ports:
       - "8123:8000"
     env_file: .env.docker
     # Redis comes from outside this compose file (a locally running container
     # or a managed instance). REDIS_URI in .env.docker decides where. The
     # host-gateway mapping keeps host.docker.internal working on Linux too.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    # restart: unless-stopped
