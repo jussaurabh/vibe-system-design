@@ -1,0 +1,1 @@
+ALTER TABLE "vibe_system_design_ai_chat"."chat_sessions" DROP CONSTRAINT "chat_sessions_id_prefix_check";

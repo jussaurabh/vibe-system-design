@@ -1,7 +1,9 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { HumanMessage } from '@langchain/core/messages';
 import type { ProtocolEvent } from '@langchain/langgraph';
+import type { Client, Thread } from '@langchain/langgraph-sdk';
 
+import { AGENT_SERVER_CLIENT } from '../agent-server/agent-server.module.js';
 import { DEEP_AGENT, type StreamableAgent } from '../agent/agent.provider.js';
 import { HARDCODED_USER_ID } from './chat.constants.js';
 import { toLangChainMessages } from './utils/history.js';
@@ -9,11 +11,41 @@ import { RunRecorder } from './chat.persistence.js';
 import { CHAT_REPOSITORY, type ChatRepository } from './chat.repository.js';
 import { cutTitle } from '../utils/cut-title.js';
 import type { SessionSummary, StoredMessage } from './chat.types.js';
-import { newMessageId, newSessionId } from './utils/id.js';
+import { newMessageId } from './utils/id.js';
 import { createEventFilter } from '../utils/stream-event-filter.js';
 import { resolveEventSelectors } from '../utils/stream-event-policy.js';
 import { AppLogger } from '../logging/app-logger.js';
 import { Timed } from '../logging/utils/timed.js';
+
+/** The Agent Server answers a missing thread with an HTTP 404 error. */
+function isNotFound(err: unknown): boolean {
+  return (err as { status?: unknown } | null)?.status === 404;
+}
+
+/**
+ * Parse a thread datetime into epoch milliseconds.
+ *
+ * The Agent Server sends ISO datetimes. A value the runtime cannot parse
+ * becomes the current time instead of `NaN`.
+ */
+function toEpochMs(value: string | null | undefined): number {
+  if (value === undefined || value === null) return Date.now();
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+/** Map an Agent Server thread to the session summary the API returns. */
+export function toSessionSummary(thread: Thread): SessionSummary {
+  const updatedAt = toEpochMs(thread.updated_at ?? thread.created_at);
+  return {
+    id: thread.thread_id,
+    title:
+      typeof thread.metadata?.title === 'string' ? thread.metadata.title : '',
+    createdAt: toEpochMs(thread.created_at),
+    updatedAt,
+    lastMessageAt: updatedAt,
+  };
+}
 
 @Injectable()
 export class ChatService {
@@ -23,6 +55,7 @@ export class ChatService {
   constructor(
     @Inject(DEEP_AGENT) private readonly agent: StreamableAgent,
     @Inject(CHAT_REPOSITORY) private readonly repository: ChatRepository,
+    @Inject(AGENT_SERVER_CLIENT) private readonly client: Client,
   ) {
     this.isEnabled = createEventFilter(resolveEventSelectors());
   }
@@ -30,12 +63,17 @@ export class ChatService {
   @Timed({ metaData: () => ({ userId: HARDCODED_USER_ID }) })
   async listSessions(): Promise<SessionSummary[]> {
     try {
-      const result = await this.repository.listSessions(HARDCODED_USER_ID);
+      const threads = await this.client.threads.search({ limit: 100 });
+      // The client sorts. This avoids a dependency on the search order the
+      // server happens to answer with.
+      const sessions = threads
+        .map(toSessionSummary)
+        .sort((a, b) => b.updatedAt - a.updatedAt);
       this.logger.info('Listed chat sessions successfully', {
         userId: HARDCODED_USER_ID,
-        count: result.length,
+        count: sessions.length,
       });
-      return result;
+      return sessions;
     } catch (err) {
       this.logger.error('Failed to list chat sessions', err);
       throw err;
@@ -44,17 +82,24 @@ export class ChatService {
 
   @Timed({ metaData: () => ({ userId: HARDCODED_USER_ID }) })
   async createSession(): Promise<SessionSummary> {
-    const sessionId = newSessionId();
-    const createdAt = Date.now();
     try {
-      const result = await this.repository.createSession(HARDCODED_USER_ID, sessionId, createdAt);
+      const thread = await this.client.threads.create({
+        metadata: { title: '' },
+      });
+      // Transitional: the chat_messages foreign key needs the session row
+      // until Task 4 stops the message writes.
+      await this.repository.createSession(
+        HARDCODED_USER_ID,
+        thread.thread_id,
+        Date.now(),
+      );
       this.logger.info('Created chat session successfully', {
         userId: HARDCODED_USER_ID,
-        sessionId,
+        sessionId: thread.thread_id,
       });
-      return result;
+      return toSessionSummary(thread);
     } catch (err) {
-      this.logger.error(`Failed to create chat session ${sessionId}`, err);
+      this.logger.error('Failed to create chat session', err);
       throw err;
     }
   }
@@ -62,16 +107,17 @@ export class ChatService {
   @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
   async getSession(sessionId: string): Promise<SessionSummary> {
     try {
-      const session = await this.repository.getSession(HARDCODED_USER_ID, sessionId);
-      if (session === null) {
-        throw new NotFoundException(`The session ${sessionId} does not exist.`);
-      }
+      const thread = await this.client.threads.get(sessionId);
       this.logger.info('Fetched chat session successfully', {
         sessionId,
         userId: HARDCODED_USER_ID,
       });
-      return session;
+      return toSessionSummary(thread);
     } catch (err) {
+      // A missing thread is the same 404 the repository answered before.
+      if (isNotFound(err)) {
+        throw new NotFoundException(`The session ${sessionId} does not exist.`);
+      }
       this.logger.error(`Failed to fetch chat session ${sessionId}`, err);
       throw err;
     }
@@ -80,18 +126,21 @@ export class ChatService {
   @Timed({ metaData: (args) => ({ sessionId: args[0], title: args[1], userId: HARDCODED_USER_ID }) })
   async renameSession(sessionId: string, title: string): Promise<SessionSummary> {
     try {
-      const renamed = await this.repository.renameSession(HARDCODED_USER_ID, sessionId, title);
-      if (!renamed) {
-        throw new NotFoundException(`The session ${sessionId} does not exist.`);
-      }
-      const result = await this.getSession(sessionId);
+      const thread = await this.client.threads.get(sessionId);
+      const updated = await this.client.threads.update(sessionId, {
+        metadata: { ...thread.metadata, title },
+      });
       this.logger.info('Renamed chat session successfully', {
         sessionId,
         title,
         userId: HARDCODED_USER_ID,
       });
-      return result;
+      return toSessionSummary(updated);
     } catch (err) {
+      // A missing thread is the same 404 the repository answered before.
+      if (isNotFound(err)) {
+        throw new NotFoundException(`The session ${sessionId} does not exist.`);
+      }
       this.logger.error(`Failed to rename chat session ${sessionId}`, err);
       throw err;
     }
@@ -100,6 +149,13 @@ export class ChatService {
   @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
   async deleteSession(sessionId: string): Promise<void> {
     try {
+      try {
+        await this.client.threads.delete(sessionId);
+      } catch (err) {
+        // A missing thread is already gone. The delete stays idempotent,
+        // the same as the repository delete answered before.
+        if (!isNotFound(err)) throw err;
+      }
       await this.repository.deleteSession(HARDCODED_USER_ID, sessionId);
       this.logger.info('Deleted chat session successfully', {
         sessionId,
@@ -186,6 +242,23 @@ export class ChatService {
         `The user message of session ${sessionId} was not stored.`,
         err,
       );
+    }
+
+    // The thread metadata owns the title from here on. The DB rename above
+    // dies with the repository in Task 4.
+    if (session.title === '') {
+      try {
+        const thread = await this.client.threads.get(sessionId);
+        await this.client.threads.update(sessionId, {
+          metadata: { ...thread.metadata, title: cutTitle(message) },
+        });
+      } catch (err) {
+        // A metadata write failure never breaks the stream.
+        this.logger.error(
+          `The title of session ${sessionId} was not stored in the thread metadata.`,
+          err,
+        );
+      }
     }
 
     this.logger.info('Sent the new user message to the agent', {

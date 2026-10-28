@@ -47,7 +47,8 @@ export const chatSessions = aiChat.table(
       table.userId,
       table.lastMessageAt.desc().nullsLast(),
     ),
-    check('chat_sessions_id_prefix_check', sql`starts_with(${table.id}, 'ses_')`),
+    // The id prefix check died with the thread cutover: session ids are
+    // Agent Server thread ids (UUIDs) from Task 3 on.
   ],
 );
 

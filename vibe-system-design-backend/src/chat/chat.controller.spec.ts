@@ -3,14 +3,33 @@ import { EventEmitter } from 'node:events';
 import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { ProtocolEvent } from '@langchain/langgraph';
+import type { Thread } from '@langchain/langgraph-sdk';
 import request from 'supertest';
 
+import { AGENT_SERVER_CLIENT } from '../agent-server/agent-server.module.js';
 import { DEEP_AGENT } from '../agent/agent.provider.js';
 import { ChatController } from './chat.controller.js';
 import { CHAT_REPOSITORY } from './chat.repository.js';
 import { ChatService } from './chat.service.js';
 import { FakeChatRepository } from './fake-chat.repository.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../utils/sse.js';
+
+const THREAD_ID = '123e4567-e89b-42d3-a456-426614174000';
+const CREATED_AT = '2026-01-01T00:00:00.000Z';
+const UPDATED_AT = '2026-01-02T00:00:00.000Z';
+
+function threadFixture(metadata: Record<string, unknown> = {}): Thread {
+  return {
+    thread_id: THREAD_ID,
+    created_at: CREATED_AT,
+    updated_at: UPDATED_AT,
+    state_updated_at: UPDATED_AT,
+    metadata,
+    status: 'idle',
+    values: {},
+    interrupts: {},
+  };
+}
 
 function passingService(events: ProtocolEvent[]) {
   return {
@@ -126,8 +145,10 @@ describe('ChatController', () => {
 describe('ChatController routes', () => {
   async function createApp() {
     const repository = new FakeChatRepository();
+    // The row exists for the message routes only. The session routes read
+    // threads from the Agent Server client.
     repository.addSession({
-      id: 'ses_test',
+      id: THREAD_ID,
       title: 'A session',
       createdAt: 1000,
       updatedAt: 1000,
@@ -135,7 +156,7 @@ describe('ChatController routes', () => {
     });
     repository.addMessage({
       id: 'msg_test',
-      sessionId: 'ses_test',
+      sessionId: THREAD_ID,
       createdAt: 1001,
       seq: 1,
       senderType: 'user',
@@ -145,6 +166,16 @@ describe('ChatController routes', () => {
       modelName: null,
       latencyMs: null,
     });
+
+    const client = {
+      threads: {
+        search: vi.fn().mockResolvedValue([threadFixture({ title: 'A session' })]),
+        create: vi.fn().mockResolvedValue(threadFixture({ title: '' })),
+        get: vi.fn().mockResolvedValue(threadFixture({ title: 'A session' })),
+        update: vi.fn().mockResolvedValue(threadFixture({ title: 'A new title' })),
+        delete: vi.fn().mockResolvedValue(undefined),
+      },
+    };
 
     const moduleFixture = await Test.createTestingModule({
       controllers: [ChatController],
@@ -162,6 +193,7 @@ describe('ChatController routes', () => {
             }),
           },
         },
+        { provide: AGENT_SERVER_CLIENT, useValue: client },
       ],
     }).compile();
 
@@ -171,29 +203,32 @@ describe('ChatController routes', () => {
     return { app, repository };
   }
 
-  it('the list returns the sessions', async () => {
+  it('the list returns the threads as sessions', async () => {
     const { app } = await createApp();
     const response = await request(app.getHttpServer()).get('/v1/chat/sessions');
 
     expect(response.status).toBe(200);
     expect(response.body.sessions).toHaveLength(1);
-    expect(response.body.sessions[0].id).toBe('ses_test');
+    expect(response.body.sessions[0].id).toBe(THREAD_ID);
+    expect(response.body.sessions[0].updatedAt).toBe(Date.parse(UPDATED_AT));
     await app.close();
   });
 
-  it('the create returns the new session', async () => {
+  it('the create returns the new thread id', async () => {
     const { app } = await createApp();
     const response = await request(app.getHttpServer()).post('/v1/chat/sessions');
 
     expect(response.status).toBe(200);
-    expect(response.body.session.id).toMatch(/^ses_/);
+    expect(response.body.session.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
     expect(response.body.session.title).toBe('');
     await app.close();
   });
 
   it('the get returns the session', async () => {
     const { app } = await createApp();
-    const response = await request(app.getHttpServer()).get('/v1/chat/sessions/ses_test');
+    const response = await request(app.getHttpServer()).get(`/v1/chat/sessions/${THREAD_ID}`);
 
     expect(response.status).toBe(200);
     expect(response.body.session.title).toBe('A session');
@@ -203,7 +238,7 @@ describe('ChatController routes', () => {
   it('the rename returns the renamed session', async () => {
     const { app } = await createApp();
     const response = await request(app.getHttpServer())
-      .patch('/v1/chat/sessions/ses_test')
+      .patch(`/v1/chat/sessions/${THREAD_ID}`)
       .send({ title: 'A new title' });
 
     expect(response.status).toBe(200);
@@ -213,7 +248,7 @@ describe('ChatController routes', () => {
 
   it('the delete answers 204', async () => {
     const { app } = await createApp();
-    const response = await request(app.getHttpServer()).delete('/v1/chat/sessions/ses_test');
+    const response = await request(app.getHttpServer()).delete(`/v1/chat/sessions/${THREAD_ID}`);
 
     expect(response.status).toBe(204);
     await app.close();
@@ -221,7 +256,7 @@ describe('ChatController routes', () => {
 
   it('the message list returns the messages', async () => {
     const { app } = await createApp();
-    const response = await request(app.getHttpServer()).get('/v1/chat/sessions/ses_test/messages');
+    const response = await request(app.getHttpServer()).get(`/v1/chat/sessions/${THREAD_ID}/messages`);
 
     expect(response.status).toBe(200);
     expect(response.body.messages).toHaveLength(1);
