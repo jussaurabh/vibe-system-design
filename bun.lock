@@ -9,6 +9,23 @@
         "turbo": "2.11.10",
       },
     },
+    "vibe-system-design-agent": {
+      "name": "vibe-system-design-agent",
+      "dependencies": {
+        "@langchain/core": "^1.2.18",
+        "@langchain/langgraph": "^1.5.1",
+        "@langchain/openai": "^1.6.2",
+        "deepagents": "^1.15.1",
+      },
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "oxlint": "^1.81.0",
+        "oxlint-tsgolint": "^7.0.2001",
+        "prettier": "^3.4.2",
+        "typescript": "^6.0.2",
+        "vitest": "^4.1.2",
+      },
+    },
     "vibe-system-design-backend": {
       "name": "vibe-system-design-backend",
       "version": "0.0.1",
@@ -1846,6 +1863,8 @@
     "vfile": ["vfile@6.0.3", "", { "dependencies": { "@types/unist": "^3.0.0", "vfile-message": "^4.0.0" } }, "sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q=="],
 
     "vfile-message": ["vfile-message@4.0.3", "", { "dependencies": { "@types/unist": "^3.0.0", "unist-util-stringify-position": "^4.0.0" } }, "sha512-QTHzsGd1EhbZs4AsQ20JX1rC3cOlt/IWJruk893DfLRr57lcnOeMaWG4K0JrRta4mIJZKth2Au3mM3u03/JWKw=="],
+
+    "vibe-system-design-agent": ["vibe-system-design-agent@workspace:vibe-system-design-agent"],
 
     "vibe-system-design-backend": ["vibe-system-design-backend@workspace:vibe-system-design-backend"],
 
