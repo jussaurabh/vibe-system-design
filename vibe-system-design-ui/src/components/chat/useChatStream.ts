@@ -15,7 +15,7 @@ import {
   parseSseFrame,
   type StreamAction,
 } from "../../lib/chat-events";
-import { resolveBaseUrl, type StoredMessage } from "../../lib/chat-api";
+import { resolveBaseUrl, stopChatStream, type StoredMessage } from "../../lib/chat-api";
 
 /**
  * Shape returned by {@link useChatStream}. The hook owns the message list and
@@ -375,6 +375,8 @@ export function useChatStream(opts?: {
   );
 
   const stop = useCallback(() => {
+    // The backend cancels the run. A failed call never blocks the abort.
+    if (sessionIdRef.current) void stopChatStream(sessionIdRef.current).catch(() => {});
     abortRef.current?.abort();
     abortRef.current = null;
     failOpenAssistant("cancelled");

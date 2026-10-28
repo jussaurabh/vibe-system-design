@@ -29,4 +29,12 @@ fileignoreconfig:
   checksum: 72f735933364fd12093d17464610adf1b2f6b2ad06d740766d3b219efde9f95f
 - filename: vibe-system-design-backend/drizzle/0002_familiar_rictor.sql
   checksum: a0c0eb761ffce69848c0f73fbf9ec150ae6bcacab4cdce80d6ee237cd8c68db0
+- filename: vibe-system-design-backend/src/chat/chat.controller.spec.ts
+  checksum: cbbb6a2599f64f980428e639b1717c097ce84b8e1449c29704266ecd0899e8dc
+- filename: vibe-system-design-backend/src/chat/chat.service.ts
+  checksum: 9d1e464f7faacc4408ddc27e7aa2a3aae6b909caf63e8c95dc1066d57b96ecd3
+- filename: vibe-system-design-backend/test/chat-stream.e2e-spec.ts
+  checksum: 39697fb106f11249b7f2da547ba738e625e4fd0e1c91c4d7516df897ac1da513
+- filename: vibe-system-design-backend/src/chat/chat.service.spec.ts
+  checksum: fca15cf884f4989572cd12abc1a7dbb2a0d764ddbada8af789405adb328b1874
 version: "1.0"

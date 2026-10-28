@@ -8,8 +8,8 @@ import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { AGENT_CONFIG, DEEP_AGENT } from './../src/agent/agent.provider.js';
 import { configureApp } from './../src/app-setup.js';
-import { CHAT_REPOSITORY } from './../src/chat/chat.repository.js';
-import { FakeChatRepository } from './../src/chat/fake-chat.repository.js';
+import { AGENT_SERVER_CONFIG } from './../src/agent-server/agent-server.config.js';
+import { AGENT_SERVER_CLIENT } from './../src/agent-server/agent-server.module.js';
 import { DB_CONNECTION } from './../src/db/db.module.js';
 import { buildLoggingParams, setLoggingParams } from './../src/logging/logging-config.js';
 import { AppLogger } from './../src/logging/app-logger.js';
@@ -54,8 +54,20 @@ describe('logging (e2e)', () => {
         .useValue({ streamEvents: vi.fn() })
         .overrideProvider(AGENT_CONFIG)
         .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
-        .overrideProvider(CHAT_REPOSITORY)
-        .useValue(new FakeChatRepository())
+        .overrideProvider(AGENT_SERVER_CONFIG)
+        .useValue({ apiUrl: 'http://localhost:2024' })
+        // The 404 route test needs a missing session. The fake client
+        // answers the error the Agent Server throws for one.
+        .overrideProvider(AGENT_SERVER_CLIENT)
+        .useValue({
+          threads: {
+            get: vi
+              .fn()
+              .mockRejectedValue(
+                Object.assign(new Error('HTTP 404: Not Found'), { status: 404 }),
+              ),
+          },
+        })
         .overrideProvider(DB_CONNECTION)
         .useValue({ db: {}, close: async () => {} }),
     ).compile();

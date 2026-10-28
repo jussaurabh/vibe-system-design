@@ -1,19 +1,16 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { HumanMessage } from '@langchain/core/messages';
-import type { ProtocolEvent } from '@langchain/langgraph';
 import type { Client, Thread } from '@langchain/langgraph-sdk';
 
 import { AGENT_SERVER_CLIENT } from '../agent-server/agent-server.module.js';
-import { DEEP_AGENT, type StreamableAgent } from '../agent/agent.provider.js';
-import { HARDCODED_USER_ID } from './chat.constants.js';
-import { toLangChainMessages } from './utils/history.js';
-import { RunRecorder } from './chat.persistence.js';
-import { CHAT_REPOSITORY, type ChatRepository } from './chat.repository.js';
+import {
+  AGENT_SERVER_CONFIG,
+  type AgentServerConfig,
+} from '../agent-server/agent-server.config.js';
+import { ASSISTANT_ID } from './chat.constants.js';
+import { ProtocolAdapter, type AgentServerChunk } from './protocol-adapter.js';
 import { cutTitle } from '../utils/cut-title.js';
 import type { SessionSummary, StoredMessage } from './chat.types.js';
-import { newMessageId } from './utils/id.js';
-import { createEventFilter } from '../utils/stream-event-filter.js';
-import { resolveEventSelectors } from '../utils/stream-event-policy.js';
+import type { ProtocolEvent } from '../utils/protocol-event.js';
 import { AppLogger } from '../logging/app-logger.js';
 import { Timed } from '../logging/utils/timed.js';
 
@@ -47,20 +44,34 @@ export function toSessionSummary(thread: Thread): SessionSummary {
   };
 }
 
+/** Extract the text of one state message, the same rule the adapter uses. */
+function extractText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  for (const block of content) {
+    if (
+      typeof block === 'object' &&
+      block !== null &&
+      (block as Record<string, unknown>)['type'] === 'text' &&
+      typeof (block as Record<string, unknown>)['text'] === 'string'
+    ) {
+      text += (block as Record<string, unknown>)['text'] as string;
+    }
+  }
+  return text;
+}
+
 @Injectable()
 export class ChatService {
-  private readonly isEnabled: (event: ProtocolEvent) => boolean;
   private readonly logger = new AppLogger(ChatService.name);
 
   constructor(
-    @Inject(DEEP_AGENT) private readonly agent: StreamableAgent,
-    @Inject(CHAT_REPOSITORY) private readonly repository: ChatRepository,
     @Inject(AGENT_SERVER_CLIENT) private readonly client: Client,
-  ) {
-    this.isEnabled = createEventFilter(resolveEventSelectors());
-  }
+    @Inject(AGENT_SERVER_CONFIG) private readonly config: AgentServerConfig,
+  ) {}
 
-  @Timed({ metaData: () => ({ userId: HARDCODED_USER_ID }) })
+  @Timed()
   async listSessions(): Promise<SessionSummary[]> {
     try {
       const threads = await this.client.threads.search({ limit: 100 });
@@ -70,7 +81,6 @@ export class ChatService {
         .map(toSessionSummary)
         .sort((a, b) => b.updatedAt - a.updatedAt);
       this.logger.info('Listed chat sessions successfully', {
-        userId: HARDCODED_USER_ID,
         count: sessions.length,
       });
       return sessions;
@@ -80,21 +90,13 @@ export class ChatService {
     }
   }
 
-  @Timed({ metaData: () => ({ userId: HARDCODED_USER_ID }) })
+  @Timed()
   async createSession(): Promise<SessionSummary> {
     try {
       const thread = await this.client.threads.create({
         metadata: { title: '' },
       });
-      // Transitional: the chat_messages foreign key needs the session row
-      // until Task 4 stops the message writes.
-      await this.repository.createSession(
-        HARDCODED_USER_ID,
-        thread.thread_id,
-        Date.now(),
-      );
       this.logger.info('Created chat session successfully', {
-        userId: HARDCODED_USER_ID,
         sessionId: thread.thread_id,
       });
       return toSessionSummary(thread);
@@ -104,13 +106,12 @@ export class ChatService {
     }
   }
 
-  @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
+  @Timed({ metaData: (args) => ({ sessionId: args[0] }) })
   async getSession(sessionId: string): Promise<SessionSummary> {
     try {
       const thread = await this.client.threads.get(sessionId);
       this.logger.info('Fetched chat session successfully', {
         sessionId,
-        userId: HARDCODED_USER_ID,
       });
       return toSessionSummary(thread);
     } catch (err) {
@@ -123,7 +124,9 @@ export class ChatService {
     }
   }
 
-  @Timed({ metaData: (args) => ({ sessionId: args[0], title: args[1], userId: HARDCODED_USER_ID }) })
+  @Timed({
+    metaData: (args) => ({ sessionId: args[0], title: args[1] }),
+  })
   async renameSession(sessionId: string, title: string): Promise<SessionSummary> {
     try {
       const thread = await this.client.threads.get(sessionId);
@@ -133,7 +136,6 @@ export class ChatService {
       this.logger.info('Renamed chat session successfully', {
         sessionId,
         title,
-        userId: HARDCODED_USER_ID,
       });
       return toSessionSummary(updated);
     } catch (err) {
@@ -146,7 +148,7 @@ export class ChatService {
     }
   }
 
-  @Timed({ metaData: (args) => ({ sessionId: args[0], userId: HARDCODED_USER_ID }) })
+  @Timed({ metaData: (args) => ({ sessionId: args[0] }) })
   async deleteSession(sessionId: string): Promise<void> {
     try {
       try {
@@ -156,10 +158,8 @@ export class ChatService {
         // the same as the repository delete answered before.
         if (!isNotFound(err)) throw err;
       }
-      await this.repository.deleteSession(HARDCODED_USER_ID, sessionId);
       this.logger.info('Deleted chat session successfully', {
         sessionId,
-        userId: HARDCODED_USER_ID,
       });
     } catch (err) {
       this.logger.error(`Failed to delete chat session ${sessionId}`, err);
@@ -170,164 +170,121 @@ export class ChatService {
   @Timed({ metaData: (args) => ({ sessionId: args[0] }) })
   async listMessages(sessionId: string): Promise<StoredMessage[]> {
     try {
-      const result = await this.repository.listMessages(sessionId);
+      const state = await this.client.threads.getState(sessionId);
+      const values = state as { values?: { messages?: unknown } };
+      const raw = Array.isArray(values.values?.messages)
+        ? (values.values?.messages as unknown[])
+        : [];
+
+      const messages: StoredMessage[] = [];
+      for (let index = 0; index < raw.length; index += 1) {
+        const message = raw[index] as Record<string, unknown>;
+        const type = message['type'];
+        if (type !== 'human' && type !== 'ai') continue;
+        const id =
+          typeof message['id'] === 'string' && message['id'] !== ''
+            ? message['id']
+            : `${sessionId}-m${index}`;
+        messages.push({
+          id,
+          sessionId,
+          // The thread state carries no per message timestamps. The UI
+          // ignores the field.
+          createdAt: Date.now(),
+          seq: messages.length,
+          senderType: type === 'human' ? 'user' : 'assistant',
+          content: [{ type: 'text', text: extractText(message['content']) }],
+          status: 'complete',
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        });
+      }
+
       this.logger.info('Listed chat messages successfully', {
         sessionId,
-        count: result.length,
+        count: messages.length,
       });
-      return result;
+      return messages;
     } catch (err) {
-      this.logger.error(`Failed to list chat messages for session ${sessionId}`, err);
+      // A missing thread is the same 404 the repository answered before.
+      if (isNotFound(err)) {
+        throw new NotFoundException(`The session ${sessionId} does not exist.`);
+      }
+      this.logger.error(
+        `Failed to list chat messages for session ${sessionId}`,
+        err,
+      );
       throw err;
     }
   }
 
-  @Timed({ metaData: (args) => ({ messageId: args[0], userId: HARDCODED_USER_ID }) })
-  async deleteMessage(messageId: string): Promise<void> {
-    try {
-      await this.repository.deleteMessage(HARDCODED_USER_ID, messageId);
-      this.logger.info('Deleted chat message successfully', {
-        messageId,
-        userId: HARDCODED_USER_ID,
-      });
-    } catch (err) {
-      this.logger.error(`Failed to delete chat message ${messageId}`, err);
-      throw err;
+  /**
+   * Store the title of a fresh session in the thread metadata.
+   *
+   * The controller calls this once per stream, before the run starts. A
+   * named session keeps its title.
+   */
+  async ensureTitle(sessionId: string, message: string): Promise<void> {
+    const thread = await this.client.threads.get(sessionId);
+    const title =
+      typeof thread.metadata?.title === 'string' ? thread.metadata.title : '';
+    if (title !== '') return;
+    await this.client.threads.update(sessionId, {
+      metadata: { ...thread.metadata, title: cutTitle(message) },
+    });
+  }
+
+  /**
+   * Cancel the pending runs of a session.
+   *
+   * The SDK `cancel` needs a run id, but the UI knows only the session. The
+   * raw endpoint cancels every run of the thread with one request.
+   */
+  async stopSession(sessionId: string): Promise<void> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.config.apiKey !== undefined) {
+      headers['x-api-key'] = this.config.apiKey;
+    }
+    const response = await fetch(
+      `${this.config.apiUrl}/threads/${sessionId}/runs/cancel`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'interrupt' }),
+      },
+    );
+    if (response.status === 404) {
+      throw new NotFoundException(`The session ${sessionId} does not exist.`);
+    }
+    if (!response.ok) {
+      throw new Error(
+        `The Agent Server cancel failed with status ${response.status}.`,
+      );
     }
   }
 
   /**
    * Run the agent for one new user message and stream its protocol events.
    *
-   * The agent input carries only the new message. The checkpointer restores
-   * the rest of the conversation with the `thread_id` of the run config.
+   * The Agent Server owns the history through the thread checkpoint. The run
+   * carries only the new message. An upstream error propagates to the
+   * controller, which turns it into an error frame.
    */
   async *stream(
     sessionId: string,
     message: string,
-    signal: AbortSignal,
-    prefetchedSession?: SessionSummary,
   ): AsyncIterable<ProtocolEvent> {
-    const session =
-      prefetchedSession ??
-      (await this.repository.getSession(HARDCODED_USER_ID, sessionId));
-    if (session === null)
-      throw new NotFoundException(`The session ${sessionId} does not exist.`);
-
-    const userMessageId = newMessageId();
-
-    // The question is stored before the agent runs. A crash keeps the question.
-    try {
-      await this.repository.appendMessage({
-        id: userMessageId,
-        sessionId,
-        senderType: 'user',
-        content: [{ type: 'text', text: message }],
-        status: 'complete',
-        tokenCount: null,
-        modelName: null,
-        latencyMs: null,
-        createdAt: Date.now(),
-      });
-      if (session.title === '') {
-        await this.repository.renameSession(
-          HARDCODED_USER_ID,
-          sessionId,
-          cutTitle(message),
-        );
-      }
-    } catch (err) {
-      // A write failure never breaks the stream.
-      this.logger.error(
-        `The user message of session ${sessionId} was not stored.`,
-        err,
-      );
-    }
-
-    // The thread metadata owns the title from here on. The DB rename above
-    // dies with the repository in Task 4.
-    if (session.title === '') {
-      try {
-        const thread = await this.client.threads.get(sessionId);
-        await this.client.threads.update(sessionId, {
-          metadata: { ...thread.metadata, title: cutTitle(message) },
-        });
-      } catch (err) {
-        // A metadata write failure never breaks the stream.
-        this.logger.error(
-          `The title of session ${sessionId} was not stored in the thread metadata.`,
-          err,
-        );
-      }
-    }
-
-    this.logger.info('Sent the new user message to the agent', {
-      sessionId,
-      userId: HARDCODED_USER_ID,
-      historySource: 'checkpoint',
-      inputCount: 1,
-      userMessageId,
+    const adapter = new ProtocolAdapter();
+    const chunks = this.client.runs.stream(sessionId, ASSISTANT_ID, {
+      input: { messages: [{ role: 'user', content: message }] },
+      streamMode: ['messages-tuple', 'updates'],
     });
-
-    // The rows are written one after the other. Two writes in parallel would
-    // race for the next seq of the session.
-    let writes: Promise<void> = Promise.resolve();
-    const recorder = new RunRecorder({
-      newMessageId,
-      now: () => Date.now(),
-      modelName: this.agent.modelName ?? null,
-      onRow: (row) => {
-        writes = writes.then(async () => {
-          try {
-            await this.repository.appendMessage({
-              id: row.id,
-              sessionId,
-              senderType: row.senderType,
-              content: row.content,
-              status: row.status,
-              tokenCount: row.tokenCount,
-              modelName: row.modelName,
-              latencyMs: row.latencyMs,
-              createdAt: row.createdAt,
-            });
-          } catch (err) {
-            // A write failure never breaks the stream.
-            this.logger.error(
-              `A chat message of session ${sessionId} was not stored.`,
-              err,
-            );
-          }
-        });
-      },
-    });
-
-    const events = await this.agent.streamEvents(
-      { messages: [new HumanMessage(message)] },
-      {
-        version: 'v3',
-        configurable: {
-          thread_id: sessionId,
-          user_id: HARDCODED_USER_ID,
-          session_id: sessionId,
-        },
-        signal,
-      },
-    );
-
-    try {
-      for await (const event of events) {
-        recorder.handle(event);
-        if (this.isEnabled(event)) yield event;
-      }
-    } catch (err) {
-      // A run the user stopped is not a failure. The partial reply is stored
-      // as incomplete.
-      recorder.finish(signal.aborted ? 'incomplete' : 'error');
-      throw err;
-    } finally {
-      // A reply that never reached its end is incomplete.
-      recorder.finish('incomplete');
-      await writes;
+    for await (const chunk of chunks as AsyncIterable<AgentServerChunk>) {
+      for (const event of adapter.consume(chunk)) yield event;
     }
+    for (const event of adapter.flush()) yield event;
   }
 }

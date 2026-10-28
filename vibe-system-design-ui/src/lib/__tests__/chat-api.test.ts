@@ -5,6 +5,7 @@ import {
   deleteSession,
   listMessages,
   listSessions,
+  stopChatStream,
 } from "../chat-api";
 
 /** Build a JSON response for the fetch mock. */
@@ -67,5 +68,23 @@ describe("chat api", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(listSessions()).rejects.toThrow(/500/);
+  });
+
+  it("stops the stream of a session", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(undefined, 204));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await stopChatStream("ses_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/v1/chat/sessions/ses_1/stop",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("throws when the stop request fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, 500));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(stopChatStream("ses_1")).rejects.toThrow(/500/);
   });
 });

@@ -5,8 +5,7 @@ import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { AGENT_CONFIG, DEEP_AGENT } from './../src/agent/agent.provider.js';
 import { configureApp } from './../src/app-setup.js';
-import { CHAT_REPOSITORY } from './../src/chat/chat.repository.js';
-import { FakeChatRepository } from './../src/chat/fake-chat.repository.js';
+import { AGENT_SERVER_CONFIG } from './../src/agent-server/agent-server.config.js';
 import { DB_CONNECTION } from './../src/db/db.module.js';
 import { overrideCheckpointer } from './fake-checkpointer.js';
 
@@ -28,8 +27,8 @@ describe('AppController (e2e)', () => {
           apiKey: 'test',
           model: 'test',
         })
-        .overrideProvider(CHAT_REPOSITORY)
-        .useValue(new FakeChatRepository())
+        .overrideProvider(AGENT_SERVER_CONFIG)
+        .useValue({ apiUrl: 'http://localhost:2024' })
         .overrideProvider(DB_CONNECTION)
         .useValue({ db: {}, close: async () => {} }),
     ).compile();

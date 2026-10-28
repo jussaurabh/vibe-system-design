@@ -326,6 +326,23 @@ describe("useChatStream", () => {
 
     expect(signal.aborted).toBe(true);
     expect(result.current.isRunning).toBe(false);
+    // The stop call reaches the backend before the reader aborts.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("/v1/chat/sessions/ses_test/stop");
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("POST");
+  });
+
+  it("stop sends no stop request when no session is open", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useChatStream());
+
+    act(() => {
+      result.current.stop();
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("ignores the frames of a superseded stream", async () => {

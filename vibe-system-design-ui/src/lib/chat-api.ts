@@ -98,3 +98,13 @@ export async function listMessages(sessionId: string): Promise<StoredMessage[]> 
   );
   return body.messages;
 }
+
+/** Stop the running stream of a session on the backend. */
+export async function stopChatStream(sessionId: string): Promise<void> {
+  const response = await fetch(
+    `${resolveBaseUrl()}/v1/chat/sessions/${sessionId}/stop`,
+    { method: "POST" },
+  );
+  // The route answers 204, so there is no body to read.
+  assertOk(response);
+}

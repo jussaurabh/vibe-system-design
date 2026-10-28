@@ -2,21 +2,21 @@ import { EventEmitter } from 'node:events';
 
 import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import type { ProtocolEvent } from '@langchain/langgraph';
 import type { Thread } from '@langchain/langgraph-sdk';
 import request from 'supertest';
 
+import { AGENT_SERVER_CONFIG } from '../agent-server/agent-server.config.js';
 import { AGENT_SERVER_CLIENT } from '../agent-server/agent-server.module.js';
-import { DEEP_AGENT } from '../agent/agent.provider.js';
 import { ChatController } from './chat.controller.js';
-import { CHAT_REPOSITORY } from './chat.repository.js';
 import { ChatService } from './chat.service.js';
-import { FakeChatRepository } from './fake-chat.repository.js';
+import type { AgentServerChunk } from './protocol-adapter.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../utils/sse.js';
+import type { ProtocolEvent } from '../utils/protocol-event.js';
 
 const THREAD_ID = '123e4567-e89b-42d3-a456-426614174000';
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 const UPDATED_AT = '2026-01-02T00:00:00.000Z';
+const API_URL = 'http://localhost:2024';
 
 function threadFixture(metadata: Record<string, unknown> = {}): Thread {
   return {
@@ -36,6 +36,7 @@ function passingService(events: ProtocolEvent[]) {
     async getSession() {
       return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
     },
+    async ensureTitle() {},
     async *stream() {
       for (const event of events) yield event;
     },
@@ -87,44 +88,13 @@ describe('ChatController', () => {
     expect(res.write).not.toHaveBeenCalled();
   });
 
-  it('aborts the agent and stops writing when the response closes mid-stream', async () => {
-    const { res, written } = createFakeRes();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    const seen: AbortSignal[] = [];
-    const service = {
-      async getSession() {
-        return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
-      },
-      async *stream(_sessionId: string, _message: string, signal: AbortSignal) {
-        seen.push(signal);
-        yield firstEvent;
-        await gate;
-        yield { ...firstEvent, seq: 2 } as ProtocolEvent;
-      },
-    };
-    const controller = new ChatController(service as unknown as ChatService);
-
-    const pending = controller.stream(
-      { sessionId: 'ses_test', message: 'hi' },
-      new EventEmitter() as any,
-      res as any,
-    );
-    await vi.waitFor(() => expect(written).toHaveLength(1));
-    res.emit('close');
-    release();
-    await pending;
-
-    expect(seen[0]?.aborted).toBe(true);
-    expect(written).toEqual([formatEventFrame(firstEvent)]);
-  });
-
   it('writes an error frame when the agent stream throws', async () => {
     const { res, written } = createFakeRes();
     const service = {
       async getSession() {
         return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
       },
+      async ensureTitle() {},
       // eslint-disable-next-line require-yield
       async *stream(): AsyncGenerator<ProtocolEvent> {
         throw new Error('provider exploded');
@@ -143,30 +113,20 @@ describe('ChatController', () => {
 });
 
 describe('ChatController routes', () => {
-  async function createApp() {
-    const repository = new FakeChatRepository();
-    // The row exists for the message routes only. The session routes read
-    // threads from the Agent Server client.
-    repository.addSession({
-      id: THREAD_ID,
-      title: 'A session',
-      createdAt: 1000,
-      updatedAt: 1000,
-      lastMessageAt: null,
-    });
-    repository.addMessage({
-      id: 'msg_test',
-      sessionId: THREAD_ID,
-      createdAt: 1001,
-      seq: 1,
-      senderType: 'user',
-      content: [{ type: 'text', text: 'hi' }],
-      status: 'complete',
-      tokenCount: null,
-      modelName: null,
-      latencyMs: null,
-    });
+  /** An async iterable that yields the given chunks. */
+  function chunkStream(chunks: AgentServerChunk[]): AsyncIterable<AgentServerChunk> {
+    return {
+      [Symbol.asyncIterator]: async function* () {
+        for (const chunk of chunks) yield chunk;
+      },
+    };
+  }
 
+  function emptyChunkStream(): AsyncIterable<AgentServerChunk> {
+    return chunkStream([]);
+  }
+
+  async function createApp() {
     const client = {
       threads: {
         search: vi.fn().mockResolvedValue([threadFixture({ title: 'A session' })]),
@@ -174,6 +134,18 @@ describe('ChatController routes', () => {
         get: vi.fn().mockResolvedValue(threadFixture({ title: 'A session' })),
         update: vi.fn().mockResolvedValue(threadFixture({ title: 'A new title' })),
         delete: vi.fn().mockResolvedValue(undefined),
+        getState: vi.fn().mockResolvedValue({
+          values: {
+            messages: [
+              { type: 'human', content: 'hi', id: 'm1' },
+              { type: 'ai', content: [{ type: 'text', text: 'hello' }], id: 'm2' },
+            ],
+          },
+        }),
+      },
+      runs: {
+        stream: vi.fn().mockReturnValue(emptyChunkStream()),
+        cancel: vi.fn().mockResolvedValue(undefined),
       },
     };
 
@@ -181,26 +153,15 @@ describe('ChatController routes', () => {
       controllers: [ChatController],
       providers: [
         ChatService,
-        { provide: CHAT_REPOSITORY, useValue: repository },
-        {
-          provide: DEEP_AGENT,
-          useValue: {
-            modelName: 'test-model',
-            streamEvents: vi.fn().mockResolvedValue({
-              [Symbol.asyncIterator]: async function* () {
-                // The routes never run the agent.
-              },
-            }),
-          },
-        },
         { provide: AGENT_SERVER_CLIENT, useValue: client },
+        { provide: AGENT_SERVER_CONFIG, useValue: { apiUrl: API_URL, apiKey: 'test-key' } },
       ],
     }).compile();
 
     const app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('v1');
     await app.init();
-    return { app, repository };
+    return { app, client };
   }
 
   it('the list returns the threads as sessions', async () => {
@@ -219,9 +180,7 @@ describe('ChatController routes', () => {
     const response = await request(app.getHttpServer()).post('/v1/chat/sessions');
 
     expect(response.status).toBe(200);
-    expect(response.body.session.id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    );
+    expect(response.body.session.id).toBe(THREAD_ID);
     expect(response.body.session.title).toBe('');
     await app.close();
   });
@@ -254,21 +213,76 @@ describe('ChatController routes', () => {
     await app.close();
   });
 
-  it('the message list returns the messages', async () => {
+  it('the message list maps the thread state to messages', async () => {
     const { app } = await createApp();
     const response = await request(app.getHttpServer()).get(`/v1/chat/sessions/${THREAD_ID}/messages`);
 
     expect(response.status).toBe(200);
-    expect(response.body.messages).toHaveLength(1);
-    expect(response.body.messages[0].id).toBe('msg_test');
+    expect(response.body.messages.map((message: { id: string }) => message.id)).toEqual([
+      'm1',
+      'm2',
+    ]);
     await app.close();
   });
 
-  it('the message delete answers 204', async () => {
+  it('the stop route cancels the runs of the session and answers 204', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
     const { app } = await createApp();
-    const response = await request(app.getHttpServer()).delete('/v1/chat/messages/msg_test');
+
+    const response = await request(app.getHttpServer()).post(`/v1/chat/sessions/${THREAD_ID}/stop`);
 
     expect(response.status).toBe(204);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${API_URL}/threads/${THREAD_ID}/runs/cancel`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'interrupt' }),
+      }),
+    );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['x-api-key']).toBe('test-key');
+    await app.close();
+    vi.unstubAllGlobals();
+  });
+
+  it('the stop route answers 404 for an unknown session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { app } = await createApp();
+
+    const response = await request(app.getHttpServer()).post('/v1/chat/sessions/ses_missing/stop');
+
+    expect(response.status).toBe(404);
+    await app.close();
+    vi.unstubAllGlobals();
+  });
+
+  it('closing the response does not call runs.cancel', async () => {
+    const { app, client } = await createApp();
+    const controller = app.get(ChatController);
+    const { res, written } = createFakeRes();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    client.runs.stream.mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield { event: 'metadata', data: { run_id: 'run-1' } };
+        await gate;
+        yield { event: 'messages', data: [{ id: 'ai-1', content: 'late' }, {}] };
+      },
+    } as AsyncIterable<AgentServerChunk>);
+
+    const pending = controller.stream(
+      { sessionId: THREAD_ID, message: 'hi' },
+      new EventEmitter() as any,
+      res as any,
+    );
+    await vi.waitFor(() => expect(written).toHaveLength(1));
+    res.emit('close');
+    release();
+    await pending;
+
+    expect(client.runs.cancel).not.toHaveBeenCalled();
     await app.close();
   });
 });

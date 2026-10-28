@@ -20,6 +20,8 @@ const AGENT_SERVER_CLIENT_PROVIDER: Provider = {
 
 @Module({
   providers: [AGENT_SERVER_CONFIG_PROVIDER, AGENT_SERVER_CLIENT_PROVIDER],
-  exports: [AGENT_SERVER_CLIENT],
+  // The config rides along: the raw cancel request of the chat service
+  // reads the API URL and the API key from it.
+  exports: [AGENT_SERVER_CONFIG, AGENT_SERVER_CLIENT],
 })
 export class AgentServerModule {}

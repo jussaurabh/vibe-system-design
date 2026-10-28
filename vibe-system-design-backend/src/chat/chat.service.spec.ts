@@ -1,41 +1,19 @@
-import { Writable } from 'node:stream';
-import { HumanMessage } from '@langchain/core/messages';
 import { NotFoundException } from '@nestjs/common';
-import type { ProtocolEvent } from '@langchain/langgraph';
 import type { Client, Thread } from '@langchain/langgraph-sdk';
 
-import type { StreamableAgent } from '../agent/agent.provider.js';
-import {
-  buildLoggingParams,
-  setLoggingParams,
-} from '../logging/logging-config.js';
-import { HARDCODED_USER_ID } from './chat.constants.js';
+import type { AgentServerConfig } from '../agent-server/agent-server.config.js';
 import { ChatService, toSessionSummary } from './chat.service.js';
-import { FakeChatRepository } from './fake-chat.repository.js';
-
-function stubAgent(events: ProtocolEvent[]) {
-  return {
-    modelName: 'test-model',
-    streamEvents: vi.fn().mockResolvedValue({
-      [Symbol.asyncIterator]: async function* () {
-        for (const event of events) yield event;
-      },
-    }),
-  };
-}
-
-function messageEvent(method: string, data: unknown): ProtocolEvent {
-  return {
-    type: 'event',
-    seq: 1,
-    method,
-    params: { namespace: [], timestamp: 0, data },
-  } as ProtocolEvent;
-}
+import type { AgentServerChunk } from './protocol-adapter.js';
+import type { ProtocolEvent } from '../utils/protocol-event.js';
 
 const THREAD_ID = '123e4567-e89b-42d3-a456-426614174000';
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 const UPDATED_AT = '2026-01-02T00:00:00.000Z';
+
+const CONFIG: AgentServerConfig = {
+  apiUrl: 'http://localhost:2024',
+  apiKey: 'test-key',
+};
 
 function threadFixture(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -56,7 +34,40 @@ function notFound(): Error {
   return Object.assign(new Error('HTTP 404: Not Found'), { status: 404 });
 }
 
-/** The fake client threads API, with working defaults. */
+/** The Case A chunk sequence of the ProtocolAdapter spec. */
+const CASE_A_CHUNKS: AgentServerChunk[] = [
+  { event: 'metadata', data: { run_id: 'run-1' } },
+  {
+    event: 'messages',
+    data: [{ id: 'ai-1', content: 'Hello' }, { langgraph_node: 'model' }],
+  },
+  {
+    event: 'messages',
+    data: [
+      {
+        id: 'ai-1',
+        content: ' world',
+        usage_metadata: {
+          input_tokens: 5,
+          output_tokens: 7,
+          total_tokens: 12,
+        },
+      },
+      {},
+    ],
+  },
+];
+
+/** An async iterable that yields the given chunks. */
+function chunkStream(chunks: AgentServerChunk[]): AsyncIterable<AgentServerChunk> {
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
+
+/** The fake client threads and runs APIs, with working defaults. */
 function stubClient() {
   return {
     threads: {
@@ -65,275 +76,242 @@ function stubClient() {
       get: vi.fn().mockResolvedValue(threadFixture()),
       update: vi.fn().mockResolvedValue(threadFixture()),
       delete: vi.fn().mockResolvedValue(undefined),
+      getState: vi.fn().mockResolvedValue({ values: {} }),
+    },
+    runs: {
+      stream: vi.fn().mockReturnValue(chunkStream([])),
+      cancel: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
 
-/** Build a service with a fake repository that holds one session. */
-function buildService(
-  agent: StreamableAgent,
-  repository = new FakeChatRepository(),
-  client = stubClient(),
-) {
-  repository.addSession({
-    id: 'ses_test',
-    title: '',
-    createdAt: 1000,
-    updatedAt: 1000,
-    lastMessageAt: null,
-  });
+function buildService(client = stubClient()) {
   return {
-    service: new ChatService(
-      agent,
-      repository,
-      client as unknown as Client,
-    ),
-    repository,
+    service: new ChatService(client as unknown as Client, CONFIG),
     client,
   };
 }
 
-describe('ChatService', () => {
-  it('the user message is stored before the agent runs', async () => {
-    const agent = stubAgent([]);
-    const { service, repository } = buildService(agent);
+describe('ChatService stream proxy', () => {
+  it('the stream proxies the agent server run through the adapter', async () => {
+    const { service, client } = buildService();
+    client.runs.stream.mockReturnValue(chunkStream(CASE_A_CHUNKS));
 
-    for await (const _event of service.stream(
-      'ses_test',
-      'hi',
-      new AbortController().signal,
-    )) {
-      // The stream carries no event in this test.
+    const events: ProtocolEvent[] = [];
+    for await (const event of service.stream(THREAD_ID, 'hi')) {
+      events.push(event);
     }
 
-    const stored = await repository.listMessages('ses_test');
-    expect(stored).toHaveLength(1);
-    expect(stored[0].senderType).toBe('user');
-    expect(stored[0].content).toEqual([{ type: 'text', text: 'hi' }]);
-
-    const received = agent.streamEvents.mock.calls[0][0];
-    expect(received.messages).toHaveLength(1);
-    expect(received.messages.at(-1)).toBeInstanceOf(HumanMessage);
-    expect(
-      JSON.stringify((received.messages.at(-1) as HumanMessage).content),
-    ).toBe('"hi"');
-  });
-
-  it('an unknown session id is a 404', async () => {
-    const agent = stubAgent([]);
-    const service = new ChatService(
-      agent,
-      new FakeChatRepository(),
-      stubClient() as unknown as Client,
-    );
-
-    await expect(async () => {
-      for await (const _event of service.stream(
-        'ses_missing',
-        'hi',
-        new AbortController().signal,
-      )) {
-        // The stream never starts.
-      }
-    }).rejects.toBeInstanceOf(NotFoundException);
-    expect(agent.streamEvents).not.toHaveBeenCalled();
-  });
-
-  it('the session id is the thread id of the agent', async () => {
-    const agent = stubAgent([]);
-    const { service } = buildService(agent);
-
-    for await (const _event of service.stream(
-      'ses_test',
-      'hi',
-      new AbortController().signal,
-    )) {
-      // The stream carries no event in this test.
-    }
-
-    expect(agent.streamEvents).toHaveBeenCalledWith(expect.anything(), {
-      version: 'v3',
-      configurable: {
-        thread_id: 'ses_test',
-        user_id: 'user-local-dev',
-        session_id: 'ses_test',
-      },
-      signal: expect.anything(),
+    expect(client.runs.stream).toHaveBeenCalledWith(THREAD_ID, 'agent', {
+      input: { messages: [{ role: 'user', content: 'hi' }] },
+      streamMode: ['messages-tuple', 'updates'],
     });
-  });
-
-  it('a stopped stream stores the partial reply', async () => {
-    const agent = stubAgent([
-      messageEvent('messages', { event: 'message-start', id: 'm-1' }),
-      messageEvent('messages', {
-        event: 'content-block-delta',
-        delta: { type: 'text-delta', text: 'partial' },
-      }),
+    expect(events.map((event) => [event.seq, event.method])).toEqual([
+      [0, 'lifecycle'],
+      [1, 'messages'],
+      [2, 'messages'],
+      [3, 'messages'],
+      [4, 'messages'],
+      [5, 'messages'],
+      [6, 'messages'],
+      [7, 'lifecycle'],
     ]);
-    const { service, repository } = buildService(agent);
-
-    for await (const _event of service.stream(
-      'ses_test',
-      'hi',
-      new AbortController().signal,
-    )) {
-      // The stream ends with the assistant message still open.
-    }
-
-    const stored = await repository.listMessages('ses_test');
-    const reply = stored.find((row) => row.senderType === 'assistant');
-    expect(reply).toBeDefined();
-    expect(reply?.status).toBe('incomplete');
-    expect(reply?.content).toEqual([{ type: 'text', text: 'partial' }]);
-  });
-
-  it('the title is cut from the first user message', async () => {
-    const agent = stubAgent([]);
-    const { service, repository } = buildService(agent);
-
-    for await (const _event of service.stream(
-      'ses_test',
-      'a'.repeat(200),
-      new AbortController().signal,
-    )) {
-      // The stream carries no event in this test.
-    }
-
-    const session = await repository.getSession(HARDCODED_USER_ID, 'ses_test');
-    expect(session?.title.length).toBeLessThanOrEqual(60);
-    expect(session?.title.length).toBeGreaterThan(0);
-  });
-
-  it('a run the user stopped stores the partial reply as incomplete', async () => {
-    const controller = new AbortController();
-    const agent = {
-      modelName: 'test-model',
-      streamEvents: vi.fn(async () => ({
-        [Symbol.asyncIterator]: async function* () {
-          yield messageEvent('messages', { event: 'message-start', id: 'm-1' });
-          yield messageEvent('messages', {
-            event: 'content-block-delta',
-            delta: { type: 'text-delta', text: 'partial' },
-          });
-          // The user pressed stop. The run fails and the signal is aborted.
-          controller.abort();
-          throw new Error('Abort');
-        },
-      })),
-    };
-    const { service, repository } = buildService(agent);
-
-    await expect(async () => {
-      for await (const _event of service.stream(
-        'ses_test',
-        'hi',
-        controller.signal,
-      )) {
-        // The stream ends with the run.
-      }
-    }).rejects.toThrow('Abort');
-
-    const stored = await repository.listMessages('ses_test');
-    const reply = stored.find((row) => row.senderType === 'assistant');
-    expect(reply?.status).toBe('incomplete');
-    expect(reply?.content).toEqual([{ type: 'text', text: 'partial' }]);
-  });
-
-  it('a failed run stores the reply as an error', async () => {
-    const agent = {
-      modelName: 'test-model',
-      streamEvents: vi.fn(async () => ({
-        [Symbol.asyncIterator]: async function* () {
-          yield messageEvent('messages', { event: 'message-start', id: 'm-1' });
-          yield messageEvent('messages', {
-            event: 'content-block-delta',
-            delta: { type: 'text-delta', text: 'partial' },
-          });
-          throw new Error('the model exploded');
-        },
-      })),
-    };
-    const { service, repository } = buildService(agent);
-
-    await expect(async () => {
-      for await (const _event of service.stream(
-        'ses_test',
-        'hi',
-        new AbortController().signal,
-      )) {
-        // The stream ends with the run.
-      }
-    }).rejects.toThrow('the model exploded');
-
-    const stored = await repository.listMessages('ses_test');
-    const reply = stored.find((row) => row.senderType === 'assistant');
-    expect(reply?.status).toBe('error');
-  });
-
-  it('a database write failure does not break the stream', async () => {
-    const event = messageEvent('messages', {
-      event: 'message-start',
-      id: 'm-1',
+    const deltas = events
+      .map((event) => event.params.data as Record<string, unknown>)
+      .filter((data) => data['event'] === 'content-block-delta')
+      .map((data) => (data['delta'] as Record<string, unknown>)['text']);
+    expect(deltas).toEqual(['Hello', ' world']);
+    const finish = events
+      .map((event) => event.params.data as Record<string, unknown>)
+      .find((data) => data['event'] === 'message-finish');
+    expect(finish?.['usage']).toEqual({
+      input_tokens: 5,
+      output_tokens: 7,
+      total_tokens: 12,
     });
-    const agent = stubAgent([event]);
-    const { service, repository } = buildService(agent);
-    vi.spyOn(repository, 'appendMessage').mockRejectedValue(
-      new Error('the database is down'),
+    expect(events.at(-1)?.params.data).toEqual({ event: 'completed' });
+  });
+
+  it('an upstream stream error propagates out of the stream', async () => {
+    const { service, client } = buildService();
+    // The failure comes from the iteration itself. The service wraps no
+    // try/catch around it, so the error reaches the controller.
+    client.runs.stream.mockImplementation(() => ({
+      [Symbol.asyncIterator]: async function* () {
+        yield CASE_A_CHUNKS[0];
+        throw new Error('the run exploded');
+      },
+    }));
+
+    await expect(async () => {
+      for await (const _event of service.stream(THREAD_ID, 'hi')) {
+        // The stream dies mid-run.
+      }
+    }).rejects.toThrow('the run exploded');
+  });
+});
+
+describe('ChatService stop', () => {
+  it('stopSession cancels the runs of the thread through the API', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { service, client } = buildService();
+
+    await service.stopSession(THREAD_ID);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://localhost:2024/threads/${THREAD_ID}/runs/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'test-key',
+        },
+        body: JSON.stringify({ action: 'interrupt' }),
+      },
+    );
+    expect(client.runs.cancel).not.toHaveBeenCalled();
+  });
+
+  it('a missing session is a 404 on stop', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { service } = buildService();
+
+    await expect(service.stopSession(THREAD_ID)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+});
+
+describe('ChatService ensureTitle', () => {
+  it('ensureTitle writes the cut title into the empty thread metadata', async () => {
+    const { service, client } = buildService();
+    client.threads.get.mockResolvedValue(threadFixture({ metadata: {} }));
+
+    await service.ensureTitle(THREAD_ID, 'a'.repeat(200));
+
+    expect(client.threads.get).toHaveBeenCalledWith(THREAD_ID);
+    expect(client.threads.update).toHaveBeenCalledWith(THREAD_ID, {
+      metadata: { title: 'a'.repeat(60) },
+    });
+  });
+
+  it('ensureTitle keeps the other metadata keys', async () => {
+    const { service, client } = buildService();
+    client.threads.get.mockResolvedValue(
+      threadFixture({ metadata: { source: 'input', title: '' } }),
     );
 
-    const received: ProtocolEvent[] = [];
-    for await (const receivedEvent of service.stream(
-      'ses_test',
-      'hi',
-      new AbortController().signal,
-    )) {
-      received.push(receivedEvent);
-    }
+    await service.ensureTitle(THREAD_ID, 'a'.repeat(200));
 
-    expect(agent.streamEvents).toHaveBeenCalled();
-    expect(received).toEqual([event]);
+    expect(client.threads.update).toHaveBeenCalledWith(THREAD_ID, {
+      metadata: { source: 'input', title: 'a'.repeat(60) },
+    });
   });
 
-  it('a failed write is logged as one app line with the error', async () => {
-    const lines: string[] = [];
-    const stream = new Writable({
-      write(chunk, _encoding, callback): void {
-        lines.push(String(chunk));
-        callback();
+  it('ensureTitle does nothing when the title is set', async () => {
+    const { service, client } = buildService();
+    client.threads.get.mockResolvedValue(
+      threadFixture({ metadata: { title: 'Already named' } }),
+    );
+
+    await service.ensureTitle(THREAD_ID, 'hi');
+
+    expect(client.threads.get).toHaveBeenCalledWith(THREAD_ID);
+    expect(client.threads.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatService listMessages', () => {
+  it('listMessages maps the thread state to stored messages', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      const { service, client } = buildService();
+      client.threads.getState.mockResolvedValue({
+        values: {
+          messages: [
+            { type: 'human', content: 'hi', id: 'm1' },
+            { type: 'ai', content: [{ type: 'text', text: 'hello' }], id: 'm2' },
+            { type: 'tool', content: 'ignored' },
+          ],
+        },
+      });
+
+      const messages = await service.listMessages(THREAD_ID);
+
+      expect(client.threads.getState).toHaveBeenCalledWith(THREAD_ID);
+      expect(messages).toEqual([
+        {
+          id: 'm1',
+          sessionId: THREAD_ID,
+          createdAt: 1_700_000_000_000,
+          seq: 0,
+          senderType: 'user',
+          content: [{ type: 'text', text: 'hi' }],
+          status: 'complete',
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+        {
+          id: 'm2',
+          sessionId: THREAD_ID,
+          createdAt: 1_700_000_000_000,
+          seq: 1,
+          senderType: 'assistant',
+          content: [{ type: 'text', text: 'hello' }],
+          status: 'complete',
+          tokenCount: null,
+          modelName: null,
+          latencyMs: null,
+        },
+      ]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('listMessages answers an empty list for a thread that never ran', async () => {
+    const { service, client } = buildService();
+    client.threads.getState.mockResolvedValue({ values: {} });
+
+    await expect(service.listMessages(THREAD_ID)).resolves.toEqual([]);
+
+    client.threads.getState.mockResolvedValue({});
+    await expect(service.listMessages(THREAD_ID)).resolves.toEqual([]);
+  });
+
+  it('a missing thread is a 404 on listMessages', async () => {
+    const { service, client } = buildService();
+    client.threads.getState.mockRejectedValue(notFound());
+
+    await expect(service.listMessages(THREAD_ID)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('listMessages synthesizes the id of a message without one', async () => {
+    const { service, client } = buildService();
+    client.threads.getState.mockResolvedValue({
+      values: {
+        messages: [
+          { type: 'human', content: 'hi' },
+          { type: 'ai', content: 'ok' },
+        ],
       },
     });
-    setLoggingParams(buildLoggingParams({ NODE_ENV: 'development' }, stream));
-    const agent = stubAgent([]);
-    const { service, repository } = buildService(agent);
-    vi.spyOn(repository, 'appendMessage').mockRejectedValue(
-      new Error('the database is down'),
-    );
 
-    for await (const _event of service.stream(
-      'ses_test',
-      'hi',
-      new AbortController().signal,
-    )) {
-      void _event;
-    }
+    const messages = await service.listMessages(THREAD_ID);
 
-    const parsed = lines
-      .join('')
-      .split('\n')
-      .filter((line) => line.trim() !== '')
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-    // Only the error line is under test; other app lines (like the history
-    // load) may appear around it.
-    const [line] = parsed.filter(
-      (candidate) =>
-        candidate['level'] === 'error' &&
-        candidate['logType'] === 'app' &&
-        candidate['context'] === 'ChatService',
-    );
-    const err = line?.['err'] as Record<string, unknown>;
-
-    expect(line).toBeDefined();
-    expect(err['message']).toBe('the database is down');
+    expect(messages.map((message) => message.id)).toEqual([
+      `${THREAD_ID}-m0`,
+      `${THREAD_ID}-m1`,
+    ]);
   });
 });
 
@@ -383,11 +361,7 @@ describe('thread-backed sessions', () => {
     });
     const client = stubClient();
     client.threads.search.mockResolvedValue([older, newer]);
-    const service = new ChatService(
-      stubAgent([]),
-      new FakeChatRepository(),
-      client as unknown as Client,
-    );
+    const { service } = buildService(client);
 
     const sessions = await service.listSessions();
 
@@ -405,15 +379,8 @@ describe('thread-backed sessions', () => {
     });
   });
 
-  it('createSession creates the thread and the transitional row', async () => {
-    const repository = new FakeChatRepository();
-    const client = stubClient();
-    client.threads.create.mockResolvedValue(threadFixture());
-    const service = new ChatService(
-      stubAgent([]),
-      repository,
-      client as unknown as Client,
-    );
+  it('createSession creates the thread and returns its summary', async () => {
+    const { service, client } = buildService();
 
     const session = await service.createSession();
 
@@ -427,9 +394,6 @@ describe('thread-backed sessions', () => {
       updatedAt: Date.parse(UPDATED_AT),
       lastMessageAt: Date.parse(UPDATED_AT),
     });
-    // The chat_messages foreign key needs the row until Task 4.
-    const row = await repository.getSession(HARDCODED_USER_ID, THREAD_ID);
-    expect(row?.id).toBe(THREAD_ID);
   });
 
   it('getSession maps the thread to a summary', async () => {
@@ -437,11 +401,7 @@ describe('thread-backed sessions', () => {
     client.threads.get.mockResolvedValue(
       threadFixture({ metadata: { title: 'A session' } }),
     );
-    const service = new ChatService(
-      stubAgent([]),
-      new FakeChatRepository(),
-      client as unknown as Client,
-    );
+    const { service } = buildService(client);
 
     const session = await service.getSession(THREAD_ID);
 
@@ -452,26 +412,14 @@ describe('thread-backed sessions', () => {
   it('a missing thread is the same 404 as today', async () => {
     const client = stubClient();
     client.threads.get.mockRejectedValue(notFound());
-    const service = new ChatService(
-      stubAgent([]),
-      new FakeChatRepository(),
-      client as unknown as Client,
-    );
+    const { service } = buildService(client);
 
     await expect(service.getSession(THREAD_ID)).rejects.toThrow(
       `The session ${THREAD_ID} does not exist.`,
     );
   });
 
-  it('renameSession writes the title into the thread metadata only', async () => {
-    const repository = new FakeChatRepository();
-    repository.addSession({
-      id: THREAD_ID,
-      title: '',
-      createdAt: 1000,
-      updatedAt: 1000,
-      lastMessageAt: null,
-    });
+  it('renameSession writes the title into the thread metadata', async () => {
     const client = stubClient();
     client.threads.get.mockResolvedValue(
       threadFixture({ metadata: { source: 'input', title: '' } }),
@@ -479,12 +427,7 @@ describe('thread-backed sessions', () => {
     client.threads.update.mockResolvedValue(
       threadFixture({ metadata: { source: 'input', title: 'A new title' } }),
     );
-    const renameRow = vi.spyOn(repository, 'renameSession');
-    const service = new ChatService(
-      stubAgent([]),
-      repository,
-      client as unknown as Client,
-    );
+    const { service } = buildService(client);
 
     const session = await service.renameSession(THREAD_ID, 'A new title');
 
@@ -492,116 +435,16 @@ describe('thread-backed sessions', () => {
       metadata: { source: 'input', title: 'A new title' },
     });
     expect(session.title).toBe('A new title');
-    expect(renameRow).not.toHaveBeenCalled();
   });
 
-  it('deleteSession deletes the thread and the row', async () => {
-    const repository = new FakeChatRepository();
-    repository.addSession({
-      id: THREAD_ID,
-      title: '',
-      createdAt: 1000,
-      updatedAt: 1000,
-      lastMessageAt: null,
-    });
+  it('deleteSession deletes the thread and stays idempotent', async () => {
     const client = stubClient();
-    const service = new ChatService(
-      stubAgent([]),
-      repository,
-      client as unknown as Client,
-    );
+    const { service } = buildService(client);
 
-    await service.deleteSession(THREAD_ID);
-
+    await expect(service.deleteSession(THREAD_ID)).resolves.toBeUndefined();
     expect(client.threads.delete).toHaveBeenCalledWith(THREAD_ID);
-    expect(
-      await repository.getSession(HARDCODED_USER_ID, THREAD_ID),
-    ).toBeNull();
-  });
 
-  it('the stream stores the auto-title in the thread metadata next to the row', async () => {
-    const agent = stubAgent([]);
-    const { service, repository, client } = buildService(agent);
-    client.threads.get.mockResolvedValue(
-      threadFixture({
-        thread_id: 'ses_test',
-        metadata: { source: 'input', title: '' },
-      }),
-    );
-
-    for await (const _event of service.stream(
-      'ses_test',
-      'a'.repeat(200),
-      new AbortController().signal,
-    )) {
-      // The stream carries no event in this test.
-    }
-
-    expect(client.threads.get).toHaveBeenCalledWith('ses_test');
-    expect(client.threads.update).toHaveBeenCalledWith('ses_test', {
-      metadata: { source: 'input', title: 'a'.repeat(60) },
-    });
-    // The DB rename still happens until Task 4 removes it.
-    const session = await repository.getSession(HARDCODED_USER_ID, 'ses_test');
-    expect(session?.title).toBe('a'.repeat(60));
-  });
-
-  it('a named session gets no metadata auto-title', async () => {
-    const repository = new FakeChatRepository();
-    repository.addSession({
-      id: 'ses_test',
-      title: 'Already named',
-      createdAt: 1000,
-      updatedAt: 1000,
-      lastMessageAt: null,
-    });
-    const client = stubClient();
-    const service = new ChatService(
-      stubAgent([]),
-      repository,
-      client as unknown as Client,
-    );
-
-    for await (const _event of service.stream(
-      'ses_test',
-      'hi',
-      new AbortController().signal,
-    )) {
-      // The stream carries no event in this test.
-    }
-
-    expect(client.threads.get).not.toHaveBeenCalled();
-    expect(client.threads.update).not.toHaveBeenCalled();
-  });
-
-  it('a thread metadata title failure does not break the stream', async () => {
-    const agent = stubAgent([]);
-    const repository = new FakeChatRepository();
-    repository.addSession({
-      id: 'ses_test',
-      title: '',
-      createdAt: 1000,
-      updatedAt: 1000,
-      lastMessageAt: null,
-    });
-    const client = stubClient();
-    client.threads.get.mockRejectedValue(new Error('the agent server is down'));
-    const service = new ChatService(
-      agent,
-      repository,
-      client as unknown as Client,
-    );
-
-    const received: ProtocolEvent[] = [];
-    for await (const event of service.stream(
-      'ses_test',
-      'hi',
-      new AbortController().signal,
-    )) {
-      received.push(event);
-    }
-
-    expect(client.threads.get).toHaveBeenCalledWith('ses_test');
-    expect(received).toEqual([]);
+    client.threads.delete.mockRejectedValue(notFound());
+    await expect(service.deleteSession(THREAD_ID)).resolves.toBeUndefined();
   });
 });

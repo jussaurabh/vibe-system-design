@@ -12,7 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import type { ProtocolEvent } from '@langchain/langgraph';
+import type { ProtocolEvent } from '../utils/protocol-event.js';
 
 import {
   chatStreamRequestSchema,
@@ -159,10 +159,10 @@ export class ChatController {
     return { messages: await this.chat.listMessages(sessionId) };
   }
 
-  @Delete('messages/:messageId')
+  @Post('sessions/:sessionId/stop')
   @HttpCode(204)
-  async deleteMessage(@Param('messageId') messageId: string): Promise<void> {
-    await this.chat.deleteMessage(messageId);
+  async stop(@Param('sessionId') sessionId: string): Promise<void> {
+    await this.chat.stopSession(sessionId);
   }
 
   @Post('stream')
@@ -177,16 +177,22 @@ export class ChatController {
 
     // The session is loaded before the headers go out. A missing session is a
     // 404, and the answer never becomes an event stream.
-    const session = await this.chat.getSession(parsed.data.sessionId);
+    await this.chat.getSession(parsed.data.sessionId);
 
     for (const [key, value] of Object.entries(SSE_HEADERS))
       res.setHeader(key, value);
     res.flushHeaders();
 
-    const abort = new AbortController();
-    res.on('close', () => {
-      if (!res.writableFinished) abort.abort();
-    });
+    // The title lives in the thread metadata. A failed write never breaks
+    // the stream.
+    try {
+      await this.chat.ensureTitle(parsed.data.sessionId, parsed.data.message);
+    } catch (err) {
+      this.logger.error(
+        `The title of session ${parsed.data.sessionId} was not stored.`,
+        err,
+      );
+    }
 
     const startedAt = performance.now();
     let peakInputTokens = 0;
@@ -200,8 +206,6 @@ export class ChatController {
       for await (const event of this.chat.stream(
         parsed.data.sessionId,
         parsed.data.message,
-        abort.signal,
-        session,
       )) {
         const usage = extractTokenUsage(event);
         if (usage.inputTokens !== null && usage.inputTokens > peakInputTokens) {
@@ -229,11 +233,11 @@ export class ChatController {
           lastOutputTokenDetails = usage.outputTokenDetails;
         }
 
-        if (abort.signal.aborted || res.writableEnded) break;
+        if (res.writableEnded) break;
         res.write(formatEventFrame(event));
       }
 
-      if (abort.signal.aborted || res.writableEnded) return;
+      if (res.writableEnded) return;
 
       res.write(formatDoneFrame());
       res.end();
@@ -257,7 +261,7 @@ export class ChatController {
         },
       });
     } catch (err) {
-      if (abort.signal.aborted || res.writableEnded) return;
+      if (res.writableEnded) return;
       const message = err instanceof Error ? err.message : String(err);
       res.write(formatErrorFrame(message));
       res.end();

@@ -1,71 +1,121 @@
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import type { ProtocolEvent } from '@langchain/langgraph';
+import type { Thread } from '@langchain/langgraph-sdk';
+
 import { AppModule } from '../src/app.module.js';
 import { AGENT_CONFIG, DEEP_AGENT } from '../src/agent/agent.provider.js';
 import { configureApp } from '../src/app-setup.js';
-import { CHAT_REPOSITORY } from '../src/chat/chat.repository.js';
-import { FakeChatRepository } from '../src/chat/fake-chat.repository.js';
-import type { StoredMessage } from '../src/chat/chat.types.js';
+import { AGENT_SERVER_CONFIG } from '../src/agent-server/agent-server.config.js';
+import { AGENT_SERVER_CLIENT } from '../src/agent-server/agent-server.module.js';
+import {
+  CHECKPOINTER_CONFIG,
+  PG_POOL,
+  POSTGRES_CHECKPOINTER,
+} from '../src/checkpointer/checkpointer.provider.js';
+import type { AgentServerChunk } from '../src/chat/protocol-adapter.js';
+import type { ProtocolEvent } from '../src/utils/protocol-event.js';
 import { DB_CONNECTION } from '../src/db/db.module.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/utils/sse.js';
-import { overrideCheckpointer } from './fake-checkpointer.js';
 
 const SESSION_ID = 'ses_test';
+const API_URL = 'http://localhost:2024';
 
-const events: ProtocolEvent[] = [
-  { type: 'event', seq: 1, method: 'messages', params: { namespace: [], timestamp: 0, data: { event: 'message-start' } } },
-  { type: 'event', seq: 2, method: 'messages', params: { namespace: [], timestamp: 1, data: { event: 'content-block-delta', delta: { type: 'text-delta', text: 'hi' } } } },
+/** The Task 2 Case A chunk sequence, plus one updates chunk before flush. */
+const CHUNKS: AgentServerChunk[] = [
+  { event: 'metadata', data: { run_id: 'run-1' } },
+  {
+    event: 'messages',
+    data: [{ id: 'ai-1', content: 'Hello' }, { langgraph_node: 'model' }],
+  },
+  {
+    event: 'messages',
+    data: [
+      {
+        id: 'ai-1',
+        content: ' world',
+        usage_metadata: {
+          input_tokens: 5,
+          output_tokens: 7,
+          total_tokens: 12,
+        },
+      },
+      {},
+    ],
+  },
+  { event: 'updates', data: { model: { messages: [] } } },
 ];
 
-function deepAgentStub(eventsOrError: ProtocolEvent[] | Error) {
+/** The error the Agent Server throws for a missing thread. */
+function notFound(): Error {
+  return Object.assign(new Error('HTTP 404: Not Found'), { status: 404 });
+}
+
+function threadFixture(): Thread {
   return {
-    modelName: 'test-model',
-    streamEvents: vi.fn(async () => ({
-      [Symbol.asyncIterator]: async function* () {
-        if (eventsOrError instanceof Error) throw eventsOrError;
-        for (const event of eventsOrError) yield event;
-      },
-    })),
+    thread_id: SESSION_ID,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-02T00:00:00.000Z',
+    state_updated_at: '2026-01-02T00:00:00.000Z',
+    metadata: { title: 'A session' },
+    status: 'idle',
+    values: {},
+    interrupts: {},
   };
 }
 
-function fakeRepository(): FakeChatRepository {
-  const repository = new FakeChatRepository();
-  repository.addSession({
-    id: SESSION_ID,
-    title: 'A session',
-    createdAt: 1000,
-    updatedAt: 1000,
-    lastMessageAt: null,
-  });
-  return repository;
+/** An async iterable that yields the given chunks. */
+function chunkStream(chunks: AgentServerChunk[]): AsyncIterable<AgentServerChunk> {
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
 }
 
-async function createApp(agent: unknown) {
-  // The database module and the checkpointer module are overridden too, so
-  // the test needs no database and no DATABASE_URL.
-  const moduleFixture = await overrideCheckpointer(
-    Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(DEEP_AGENT)
-      .useValue(agent)
-      .overrideProvider(AGENT_CONFIG)
-      .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
-      .overrideProvider(CHAT_REPOSITORY)
-      .useValue(fakeRepository())
-      .overrideProvider(DB_CONNECTION)
-      .useValue({ db: {}, close: async () => {} }),
-  ).compile();
+function fakeClient() {
+  return {
+    threads: {
+      get: vi.fn().mockResolvedValue(threadFixture()),
+      update: vi.fn().mockResolvedValue(threadFixture()),
+    },
+    runs: {
+      stream: vi.fn().mockReturnValue(chunkStream(CHUNKS)),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+}
+
+async function createApp(client = fakeClient()) {
+  // The database, agent, and checkpointer modules still bootstrap until
+  // Task 5, so the test overrides them instead of the real dependencies.
+  // The checkpointer stubs are inline: fake-checkpointer.ts dies in Task 5.
+  const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(DEEP_AGENT)
+    .useValue({ streamEvents: vi.fn() })
+    .overrideProvider(AGENT_CONFIG)
+    .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
+    .overrideProvider(AGENT_SERVER_CONFIG)
+    .useValue({ apiUrl: API_URL })
+    .overrideProvider(AGENT_SERVER_CLIENT)
+    .useValue(client)
+    .overrideProvider(DB_CONNECTION)
+    .useValue({ db: {}, close: async () => {} })
+    .overrideProvider(CHECKPOINTER_CONFIG)
+    .useValue({ connectionString: 'postgres://fake', schema: 'fake' })
+    .overrideProvider(POSTGRES_CHECKPOINTER)
+    .useValue({ deleteThread: vi.fn(), getTuple: vi.fn(), setup: vi.fn() })
+    .overrideProvider(PG_POOL)
+    .useValue({ end: async () => {} })
+    .compile();
   const app = moduleFixture.createNestApplication();
   configureApp(app);
   await app.init();
-  return app;
+  return { app, client };
 }
 
 describe('POST /v1/chat/stream (e2e)', () => {
-  it('streams allow-listed v3 protocol events then a done frame', async () => {
-    const app = await createApp(deepAgentStub(events));
+  it('proxies the agent server run as SSE frames then a done frame', async () => {
+    const { app, client } = await createApp();
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
       .send({ sessionId: SESSION_ID, message: 'hi' });
@@ -73,66 +123,59 @@ describe('POST /v1/chat/stream (e2e)', () => {
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/event-stream');
     expect(response.headers['cache-control']).toBe('no-cache, no-transform');
+    expect(client.runs.stream).toHaveBeenCalledWith(SESSION_ID, 'agent', {
+      input: { messages: [{ role: 'user', content: 'hi' }] },
+      streamMode: ['messages-tuple', 'updates'],
+    });
+
+    const frames = response.text
+      .split('\n\n')
+      .filter((part) => part.startsWith('data: '))
+      .map((part) => JSON.parse(part.slice('data: '.length)) as ProtocolEvent);
+
+    // The updates frame lands between the deltas and the flush frames: the
+    // adapter emits the close frames only when the stream ends.
+    expect(frames.map((frame) => frame.method)).toEqual([
+      'lifecycle',
+      'messages',
+      'messages',
+      'messages',
+      'messages',
+      'updates',
+      'messages',
+      'messages',
+      'lifecycle',
+    ]);
+    frames.forEach((frame, index) => {
+      expect(frame.type).toBe('event');
+      expect(frame.seq).toBe(index);
+      expect(frame.params.namespace).toEqual([]);
+      expect(typeof frame.params.timestamp).toBe('number');
+    });
+
+    const deltas = frames
+      .map((frame) => frame.params.data as Record<string, unknown>)
+      .filter((data) => data['event'] === 'content-block-delta')
+      .map((data) => (data['delta'] as Record<string, unknown>)['text']);
+    expect(deltas).toEqual(['Hello', ' world']);
+
+    const finish = frames
+      .map((frame) => frame.params.data as Record<string, unknown>)
+      .find((data) => data['event'] === 'message-finish');
+    expect(finish?.['usage']).toEqual({
+      input_tokens: 5,
+      output_tokens: 7,
+      total_tokens: 12,
+    });
+
     expect(response.text).toBe(
-      `${events.map(formatEventFrame).join('')}${formatDoneFrame()}`,
+      `${frames.map(formatEventFrame).join('')}${formatDoneFrame()}`,
     );
     await app.close();
   });
 
-  it('forwards only allow-listed events to the browser', async () => {
-    const allowed = [
-      {
-        type: 'event',
-        seq: 0,
-        method: 'lifecycle',
-        params: { namespace: [], timestamp: 0, data: { event: 'running', graph_name: 'root' } },
-      },
-      {
-        type: 'event',
-        seq: 1,
-        method: 'messages',
-        params: {
-          namespace: [],
-          timestamp: 1,
-          data: { event: 'content-block-delta', delta: { type: 'text-delta', text: 'hi' } },
-        },
-      },
-      {
-        type: 'event',
-        seq: 2,
-        method: 'tasks',
-        params: {
-          namespace: [],
-          timestamp: 2,
-          data: { id: 't1', name: 'model_request', result: {}, interrupts: [] },
-        },
-      },
-      {
-        type: 'event',
-        seq: 3,
-        method: 'lifecycle',
-        params: { namespace: [], timestamp: 3, data: { event: 'completed', graph_name: 'root' } },
-      },
-    ] as ProtocolEvent[];
-    const blocked = {
-      type: 'event',
-      seq: 4,
-      method: 'values',
-      params: { namespace: [], timestamp: 4, data: { messages: [] } },
-    } as ProtocolEvent;
-
-    const app = await createApp(deepAgentStub([...allowed, blocked]));
-    const response = await request(app.getHttpServer())
-      .post('/v1/chat/stream')
-      .send({ sessionId: SESSION_ID, message: 'hi' });
-
-    expect(response.text).toBe(`${allowed.map(formatEventFrame).join('')}${formatDoneFrame()}`);
-    expect(response.text).not.toContain('"method":"values"');
-    await app.close();
-  });
-
   it('returns 400 and no stream for an invalid body', async () => {
-    const app = await createApp(deepAgentStub(events));
+    const { app } = await createApp();
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
       .send({ sessionId: SESSION_ID });
@@ -142,8 +185,29 @@ describe('POST /v1/chat/stream (e2e)', () => {
     await app.close();
   });
 
-  it('emits an error frame and terminates when the agent fails mid-stream', async () => {
-    const app = await createApp(deepAgentStub(new Error('model not found')));
+  it('answers 404 and never starts the run for an unknown session id', async () => {
+    const client = fakeClient();
+    client.threads.get.mockRejectedValue(notFound());
+    const { app } = await createApp(client);
+    const response = await request(app.getHttpServer())
+      .post('/v1/chat/stream')
+      .send({ sessionId: 'ses_missing', message: 'hi' });
+
+    expect(response.status).toBe(404);
+    expect(response.headers['content-type']).not.toContain('text/event-stream');
+    expect(client.runs.stream).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('emits an error frame and terminates when the run fails mid-stream', async () => {
+    const client = fakeClient();
+    client.runs.stream.mockReturnValue({
+      // eslint-disable-next-line require-yield
+      [Symbol.asyncIterator]: async function* () {
+        throw new Error('model not found');
+      },
+    } as AsyncIterable<AgentServerChunk>);
+    const { app } = await createApp(client);
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
       .send({ sessionId: SESSION_ID, message: 'hi' });
@@ -153,76 +217,8 @@ describe('POST /v1/chat/stream (e2e)', () => {
     await app.close();
   });
 
-  it('sends only the new user message to the agent, not the stored history', async () => {
-    const agent = deepAgentStub(events);
-    const repository = fakeRepository();
-    const storedSenders: StoredMessage['senderType'][] = [
-      'user',
-      'assistant',
-      'user',
-      'assistant',
-      'system',
-    ];
-    storedSenders.forEach((senderType, index) => {
-      repository.addMessage({
-        id: `msg_seed_${index + 1}`,
-        sessionId: SESSION_ID,
-        createdAt: 1000 + index,
-        seq: index + 1,
-        senderType,
-        content: [{ type: 'text', text: `stored message ${index + 1}` }],
-        status: 'complete',
-        tokenCount: null,
-        modelName: null,
-        latencyMs: null,
-      });
-    });
-
-    const moduleFixture = await overrideCheckpointer(
-      Test.createTestingModule({ imports: [AppModule] })
-        .overrideProvider(DEEP_AGENT)
-        .useValue(agent)
-        .overrideProvider(AGENT_CONFIG)
-        .useValue({
-          baseURL: 'http://localhost',
-          apiKey: 'test',
-          model: 'test',
-        })
-        .overrideProvider(CHAT_REPOSITORY)
-        .useValue(repository)
-        .overrideProvider(DB_CONNECTION)
-        .useValue({ db: {}, close: async () => {} }),
-    ).compile();
-    const app = moduleFixture.createNestApplication();
-    configureApp(app);
-    await app.init();
-
-    await request(app.getHttpServer())
-      .post('/v1/chat/stream')
-      .send({ sessionId: SESSION_ID, message: 'the new user text' });
-
-    expect(agent.streamEvents).toHaveBeenCalledWith(
-      { messages: [expect.any(HumanMessage)] },
-      expect.objectContaining({ version: 'v3' }),
-    );
-    await app.close();
-  });
-
-  it('answers 404 and never starts the agent for an unknown session id', async () => {
-    const agent = deepAgentStub(events);
-    const app = await createApp(agent);
-    const response = await request(app.getHttpServer())
-      .post('/v1/chat/stream')
-      .send({ sessionId: 'ses_missing', message: 'hi' });
-
-    expect(response.status).toBe(404);
-    expect(response.headers['content-type']).not.toContain('text/event-stream');
-    expect(agent.streamEvents).not.toHaveBeenCalled();
-    await app.close();
-  });
-
   it('answers the CORS preflight request for an allowed origin', async () => {
-    const app = await createApp(deepAgentStub(events));
+    const { app } = await createApp();
     const response = await request(app.getHttpServer())
       .options('/v1/chat/stream')
       .set('Origin', 'http://localhost:5173')
@@ -238,7 +234,7 @@ describe('POST /v1/chat/stream (e2e)', () => {
   });
 
   it('sends the CORS header on the stream response', async () => {
-    const app = await createApp(deepAgentStub(events));
+    const { app } = await createApp();
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
       .set('Origin', 'http://localhost:5173')
@@ -252,7 +248,7 @@ describe('POST /v1/chat/stream (e2e)', () => {
   });
 
   it('sends no CORS header for an origin that is not allowed', async () => {
-    const app = await createApp(deepAgentStub(events));
+    const { app } = await createApp();
     const response = await request(app.getHttpServer())
       .post('/v1/chat/stream')
       .set('Origin', 'http://evil.test')
@@ -260,6 +256,33 @@ describe('POST /v1/chat/stream (e2e)', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    await app.close();
+  });
+});
+
+describe('POST /v1/chat/sessions/:sessionId/stop (e2e)', () => {
+  it('cancels the runs of the session through the agent server API', async () => {
+    const { app, client } = await createApp();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await request(app.getHttpServer())
+      .post(`/v1/chat/sessions/${SESSION_ID}/stop`)
+      .send();
+
+    expect(response.status).toBe(204);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${API_URL}/threads/${SESSION_ID}/runs/cancel`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'interrupt' }),
+      }),
+    );
+    expect(client.runs.cancel).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
     await app.close();
   });
 });
