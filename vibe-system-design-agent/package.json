@@ -2,7 +2,7 @@
   "name": "vibe-system-design-agent",
   "type": "module",
   "scripts": {
-    "dev": "langgraph dev",
+    "dev": "langgraphjs dev",
     "lint": "oxlint --type-aware src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
