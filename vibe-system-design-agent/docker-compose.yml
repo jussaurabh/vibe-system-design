@@ -5,8 +5,11 @@ services:
       - "8123:8000"
     env_file: .env.docker
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
   postgres:
     image: postgres:17
     environment:
