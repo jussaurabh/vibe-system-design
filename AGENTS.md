@@ -5,7 +5,7 @@ Find the documentation links from `docs/xyflow-sitemap.xml`, for related queries
 
 ## Project rules
 
-- Both `vibe-system-design-ui` and `vibe-system-design-backend` are running on `bun`.
+- Both `vibe-system-design-ui`, `vibe-system-design-backend` and `vibe-system-design-agent` are running on `bun`.
 - Always use `bun` to manage packages.
 - Rule files live in `.agents/rules/`.
 - `vibe-system-design-backend` uses NestJS. Read
@@ -17,8 +17,9 @@ Find the documentation links from `docs/xyflow-sitemap.xml`, for related queries
 
 - The root is a bun workspace. Run `bun install` from the repository root only.
   One `bun.lock` exists, at the root. Never create a per-package lockfile.
-- Each project is a workspace package: `vibe-system-design-ui` and
-  `vibe-system-design-backend`. Each directory name is also its package name.
+- Each project is a workspace package: `vibe-system-design-ui`,
+  `vibe-system-design-backend` and `vibe-system-design-agent`. Each directory
+  name is also its package name.
 - Run tasks through turbo from the root: `bun run build`, `bun run dev`,
   `bun run lint`, `bun run typecheck`, `bun run test`, `bun run test:e2e`,
   `bun run format`. Add `--filter=<package-name>` to `bunx turbo run <task>` to
