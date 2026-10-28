@@ -22,7 +22,9 @@
         "SUPABASE_SECRET_KEY",
         "SUPABASE_JWKS_URL",
         "LANGSMITH_TRACING",
-        "LANGSMITH_API_KEY"
+        "LANGSMITH_API_KEY",
+        "AGENT_SERVER_URL",
+        "AGENT_SERVER_API_KEY"
       ]
     },
     "lint": {},

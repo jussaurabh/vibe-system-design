@@ -1,8 +1,18 @@
 fileignoreconfig:
 - filename: bun.lock
-  checksum: 3d823a4ef8dbd6db2a0247207c31f8b9b3eae51d6fd4aed518761ffe6d1b220a
+  checksum: 1605332cbb1abd7245f927546040604e7b35e4127fd7386e88ee206b6f792b39
 - filename: .husky/pre-commit
   checksum: 5e6bcec2c16ed6c280a75b032433c86908cc7d5b1cd9d30673ece3e72b116662
+- filename: vibe-system-design-backend/.env.example
+  checksum: cd9d14c120b44ac19ac533931fd9448f5d9c5e3cdf4e83424940393f848e6c8c
+- filename: vibe-system-design-backend/src/agent-server/agent-server.config.spec.ts
+  checksum: 25ea2e0e02560f20151f50b610581177dfcb3c4fb4d28f0f2ddd6bbe7fae5e33
+- filename: vibe-system-design-backend/src/agent-server/agent-server.config.ts
+  checksum: 8aa49d666a6fb53da2e52eae7bd5f6ee7c1dfe63a4272be9877a73c3b2402de4
+- filename: vibe-system-design-backend/src/agent-server/agent-server.module.spec.ts
+  checksum: 0b4c77cd3c2202c247cfcdbbe2903ca9fa92f4bc97d466215a62cce78ea0b93c
+- filename: vibe-system-design-backend/src/agent-server/agent-server.module.ts
+  checksum: b083ce83220939f1c6503b6fc171074c3692170e3186427c1a9625401470d78f
 - filename: vibe-system-design-agent/.env.example
   checksum: 22164b3c4b904638255bf335876acc3cb7ae3b5ab8a48f4d42af19b5fc9c9398
 - filename: vibe-system-design-agent/.env.docker.example
