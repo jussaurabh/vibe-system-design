@@ -3,18 +3,11 @@ import request from 'supertest';
 import type { Thread } from '@langchain/langgraph-sdk';
 
 import { AppModule } from '../src/app.module.js';
-import { AGENT_CONFIG, DEEP_AGENT } from '../src/agent/agent.provider.js';
 import { configureApp } from '../src/app-setup.js';
 import { AGENT_SERVER_CONFIG } from '../src/agent-server/agent-server.config.js';
 import { AGENT_SERVER_CLIENT } from '../src/agent-server/agent-server.module.js';
-import {
-  CHECKPOINTER_CONFIG,
-  PG_POOL,
-  POSTGRES_CHECKPOINTER,
-} from '../src/checkpointer/checkpointer.provider.js';
 import type { AgentServerChunk } from '../src/chat/protocol-adapter.js';
 import type { ProtocolEvent } from '../src/utils/protocol-event.js';
-import { DB_CONNECTION } from '../src/db/db.module.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/utils/sse.js';
 
 const SESSION_ID = 'ses_test';
@@ -86,26 +79,11 @@ function fakeClient() {
 }
 
 async function createApp(client = fakeClient()) {
-  // The database, agent, and checkpointer modules still bootstrap until
-  // Task 5, so the test overrides them instead of the real dependencies.
-  // The checkpointer stubs are inline: fake-checkpointer.ts dies in Task 5.
   const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(DEEP_AGENT)
-    .useValue({ streamEvents: vi.fn() })
-    .overrideProvider(AGENT_CONFIG)
-    .useValue({ baseURL: 'http://localhost', apiKey: 'test', model: 'test' })
     .overrideProvider(AGENT_SERVER_CONFIG)
     .useValue({ apiUrl: API_URL })
     .overrideProvider(AGENT_SERVER_CLIENT)
     .useValue(client)
-    .overrideProvider(DB_CONNECTION)
-    .useValue({ db: {}, close: async () => {} })
-    .overrideProvider(CHECKPOINTER_CONFIG)
-    .useValue({ connectionString: 'postgres://fake', schema: 'fake' })
-    .overrideProvider(POSTGRES_CHECKPOINTER)
-    .useValue({ deleteThread: vi.fn(), getTuple: vi.fn(), setup: vi.fn() })
-    .overrideProvider(PG_POOL)
-    .useValue({ end: async () => {} })
     .compile();
   const app = moduleFixture.createNestApplication();
   configureApp(app);

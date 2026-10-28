@@ -1,4 +1,4 @@
-import type { ProtocolEvent } from '@langchain/langgraph';
+import type { ProtocolEvent } from './protocol-event.js';
 
 export const SSE_HEADERS: Record<string, string> = {
   'Content-Type': 'text/event-stream',

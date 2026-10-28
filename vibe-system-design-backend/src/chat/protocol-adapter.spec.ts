@@ -1,7 +1,6 @@
-import type { ProtocolEvent as LanggraphProtocolEvent } from '@langchain/langgraph';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ProtocolEvent, UsageInfo } from '../utils/protocol-event.js';
+import type { ProtocolEvent } from '../utils/protocol-event.js';
 import { ProtocolAdapter } from './protocol-adapter.js';
 
 const TIMESTAMP = 1_700_000_000_000;
@@ -299,24 +298,5 @@ describe('ProtocolAdapter', () => {
       },
       { event: 'completed' },
     ]);
-  });
-
-  it('types the protocol envelope structurally for the langgraph SSE writer', () => {
-    const usage: UsageInfo = {
-      input_tokens: 1,
-      output_tokens: 2,
-      total_tokens: 3,
-    };
-    const event: ProtocolEvent = {
-      type: 'event',
-      seq: 0,
-      method: 'messages',
-      params: { namespace: [], timestamp: 0, data: usage },
-    };
-    // src/utils/sse.ts keeps formatting langgraph-typed events until Task 5
-    // drops the import. The local type must stay assignable to it.
-    const asLanggraph: LanggraphProtocolEvent = event;
-    expect(asLanggraph.seq).toBe(0);
-    expect(event.params.data).toBe(usage);
   });
 });

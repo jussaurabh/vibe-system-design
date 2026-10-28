@@ -1,4 +1,4 @@
-import type { ProtocolEvent } from '@langchain/langgraph';
+import type { ProtocolEvent } from './protocol-event.js';
 import { describe, expect, it } from 'vitest';
 import { SSE_HEADERS, formatDoneFrame, formatErrorFrame, formatEventFrame } from './sse.js';
 

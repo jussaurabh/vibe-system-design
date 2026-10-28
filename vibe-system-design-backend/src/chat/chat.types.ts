@@ -1,4 +1,19 @@
-import type { MessagePart, MessageStatus, SenderType } from '../db/schema.js';
+export const SENDER_TYPES = ['user', 'assistant', 'system', 'tool'] as const;
+export type SenderType = (typeof SENDER_TYPES)[number];
+
+export const MESSAGE_STATUSES = ['complete', 'incomplete', 'error'] as const;
+export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
+
+export type MessagePart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'tool';
+      toolCallId: string;
+      name: string;
+      input?: unknown;
+      output?: unknown;
+      status: MessageStatus;
+    };
 
 /** A session of the chat, as the API returns it. */
 export interface SessionSummary {

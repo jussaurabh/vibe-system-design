@@ -1,10 +1,10 @@
 fileignoreconfig:
 - filename: bun.lock
-  checksum: 1605332cbb1abd7245f927546040604e7b35e4127fd7386e88ee206b6f792b39
+  checksum: c6b2a06e06b0be63aa6dab9345d05d5de91739f795be39fe599300e0701fdf88
 - filename: .husky/pre-commit
   checksum: 5e6bcec2c16ed6c280a75b032433c86908cc7d5b1cd9d30673ece3e72b116662
 - filename: vibe-system-design-backend/.env.example
-  checksum: cd9d14c120b44ac19ac533931fd9448f5d9c5e3cdf4e83424940393f848e6c8c
+  checksum: ab95ecb960eb447202fdf849cdb51e12e37461e45d959806baa6a460c35cf8a2
 - filename: vibe-system-design-backend/src/agent-server/agent-server.config.spec.ts
   checksum: 25ea2e0e02560f20151f50b610581177dfcb3c4fb4d28f0f2ddd6bbe7fae5e33
 - filename: vibe-system-design-backend/src/agent-server/agent-server.config.ts
@@ -27,10 +27,6 @@ fileignoreconfig:
   checksum: 8611a248b61669985d80905faab3532bf68148a3284a48617aa6586b71339204
 - filename: vibe-system-design-backend/src/chat/protocol-adapter.spec.ts
   checksum: 72f735933364fd12093d17464610adf1b2f6b2ad06d740766d3b219efde9f95f
-- filename: vibe-system-design-backend/drizzle/0002_familiar_rictor.sql
-  checksum: a0c0eb761ffce69848c0f73fbf9ec150ae6bcacab4cdce80d6ee237cd8c68db0
-- filename: vibe-system-design-backend/drizzle/0003_fat_meteorite.sql
-  checksum: fed2a80d78587618c0b7a44fba3494b5c187e7a6f5141dcf84a29fe026744e11
 - filename: vibe-system-design-backend/src/chat/chat.controller.spec.ts
   checksum: cbbb6a2599f64f980428e639b1717c097ce84b8e1449c29704266ecd0899e8dc
 - filename: vibe-system-design-backend/src/chat/chat.service.ts
