@@ -51,8 +51,6 @@ describe('ChatService', () => {
   it('the user message is stored before the agent runs', async () => {
     const agent = stubAgent([]);
     const { service, repository } = buildService(agent);
-    // Mock listMessages to return empty array (session has no messages yet)
-    vi.spyOn(repository, 'listMessages').mockReturnValue([]);
 
     for await (const _event of service.stream(
       'ses_test',
@@ -62,7 +60,6 @@ describe('ChatService', () => {
       // The stream carries no event in this test.
     }
 
-    // Restore the mock and check the actual repository state
     const stored = await repository.listMessages('ses_test');
     expect(stored).toHaveLength(1);
     expect(stored[0].senderType).toBe('user');
