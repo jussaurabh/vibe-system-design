@@ -10,8 +10,8 @@ import {
 
 describe('correlation ids', () => {
   it('prefixes the request id with req_ and the trace id with trace_', () => {
-    expect(newRequestId()).toMatch(/^req_[0-9A-HJKMNP-TV-Z]{26}$/);
-    expect(newTraceId()).toMatch(/^trace_[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(newRequestId()).toMatch(/^req_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(newTraceId()).toMatch(/^trace_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
   it('never repeats an id inside one process', () => {

@@ -1,17 +1,15 @@
-import { monotonicFactory } from 'ulid';
+import { randomUUID } from 'node:crypto';
 
 import { currentRequestContext } from '../request-context.js';
-
-const ulid = monotonicFactory();
 
 export const TRACE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
 export function newRequestId(): string {
-  return `req_${ulid()}`;
+  return `req_${randomUUID()}`;
 }
 
 export function newTraceId(): string {
-  return `trace_${ulid()}`;
+  return `trace_${randomUUID()}`;
 }
 
 export function isValidTraceId(value: string): boolean {

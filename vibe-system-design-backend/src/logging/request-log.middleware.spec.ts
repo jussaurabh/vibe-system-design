@@ -169,7 +169,7 @@ describe('RequestLogMiddleware', () => {
     serve(fakeRequest({ headers: { 'x-trace-id': 'bad value' } }), fakeResponse(200));
     const [line] = parse(lines);
 
-    expect(String(line?.['traceId'])).toMatch(/^trace_[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(String(line?.['traceId'])).toMatch(/^trace_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(lines.join('')).not.toContain('bad value');
   });
 

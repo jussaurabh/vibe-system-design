@@ -78,8 +78,8 @@ describe('logging (e2e)', () => {
     expect(line?.['statusCode']).toBe(200);
     expect(line?.['userId']).toBeNull();
     expect(line?.['err']).toBeNull();
-    expect(String(line?.['requestId'])).toMatch(/^req_[0-9A-HJKMNP-TV-Z]{26}$/);
-    expect(String(line?.['traceId'])).toMatch(/^trace_[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(String(line?.['requestId'])).toMatch(/^req_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(String(line?.['traceId'])).toMatch(/^trace_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(typeof line?.['durationMs']).toBe('number');
   });
 
@@ -100,7 +100,7 @@ describe('logging (e2e)', () => {
       .set('x-trace-id', 'bad value')
       .expect(200);
 
-    expect(response.headers['x-trace-id']).toMatch(/^trace_[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(response.headers['x-trace-id']).toMatch(/^trace_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     await vi.waitFor(() => expect(requestLines()).toHaveLength(1));
     expect(requestLines()[0]?.['traceId']).toBe(response.headers['x-trace-id']);
   });
