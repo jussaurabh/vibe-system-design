@@ -3,4 +3,12 @@ fileignoreconfig:
   checksum: e2d64aeb8539e9a25a532c85188f3d26c7cf29b9c2a2262b5ba58cf22f7dbc7a
 - filename: .husky/pre-commit
   checksum: 5e6bcec2c16ed6c280a75b032433c86908cc7d5b1cd9d30673ece3e72b116662
+- filename: vibe-system-design-agent/src/agent.ts
+  checksum: dbf4ee1ded6ec22187418fb080e074f90c3379ca56116f9189ec24b2970f34e5
+- filename: vibe-system-design-agent/src/config.spec.ts
+  checksum: badc0f0df78ff4507306def379233917d2950eb65d988c3430bb446a4795242d
+- filename: vibe-system-design-agent/src/agent.spec.ts
+  checksum: 04587317971dcd487c5b8d00f7e3633ef967731617a164f7f0623722c755ac30
+- filename: vibe-system-design-agent/src/config.ts
+  checksum: 8611a248b61669985d80905faab3532bf68148a3284a48617aa6586b71339204
 version: "1.0"
