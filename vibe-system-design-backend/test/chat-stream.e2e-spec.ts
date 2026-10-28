@@ -7,6 +7,7 @@ import { AGENT_CONFIG, DEEP_AGENT } from '../src/agent/agent.provider.js';
 import { configureApp } from '../src/app-setup.js';
 import { CHAT_REPOSITORY } from '../src/chat/chat.repository.js';
 import { FakeChatRepository } from '../src/chat/fake-chat.repository.js';
+import type { StoredMessage } from '../src/chat/chat.types.js';
 import { DB_CONNECTION } from '../src/db/db.module.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../src/utils/sse.js';
 import { overrideCheckpointer } from './fake-checkpointer.js';

@@ -25,4 +25,6 @@ fileignoreconfig:
   checksum: 04587317971dcd487c5b8d00f7e3633ef967731617a164f7f0623722c755ac30
 - filename: vibe-system-design-agent/src/config.ts
   checksum: 8611a248b61669985d80905faab3532bf68148a3284a48617aa6586b71339204
+- filename: vibe-system-design-backend/src/chat/protocol-adapter.spec.ts
+  checksum: 72f735933364fd12093d17464610adf1b2f6b2ad06d740766d3b219efde9f95f
 version: "1.0"
