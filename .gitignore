@@ -12,3 +12,6 @@ talisman_report
 # Local secrets — commit .env.example only.
 .env
 .env.docker
+
+*/playwright-report
+*/test-results
