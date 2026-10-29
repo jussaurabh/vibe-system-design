@@ -5,7 +5,6 @@ import { Test } from '@nestjs/testing';
 import type { Thread } from '@langchain/langgraph-sdk';
 import request from 'supertest';
 
-import { AGENT_SERVER_CONFIG } from '../agent-server/agent-server.config.js';
 import { AGENT_SERVER_CLIENT } from '../agent-server/agent-server.module.js';
 import { ChatController } from './chat.controller.js';
 import { ChatService } from './chat.service.js';
@@ -16,7 +15,6 @@ import type { ProtocolEvent } from '../utils/protocol-event.js';
 const THREAD_ID = '123e4567-e89b-42d3-a456-426614174000';
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 const UPDATED_AT = '2026-01-02T00:00:00.000Z';
-const API_URL = 'http://localhost:2024';
 
 function threadFixture(metadata: Record<string, unknown> = {}): Thread {
   return {
@@ -145,6 +143,7 @@ describe('ChatController routes', () => {
       },
       runs: {
         stream: vi.fn().mockReturnValue(emptyChunkStream()),
+        list: vi.fn().mockResolvedValue([]),
         cancel: vi.fn().mockResolvedValue(undefined),
       },
     };
@@ -154,7 +153,6 @@ describe('ChatController routes', () => {
       providers: [
         ChatService,
         { provide: AGENT_SERVER_CLIENT, useValue: client },
-        { provide: AGENT_SERVER_CONFIG, useValue: { apiUrl: API_URL, apiKey: 'test-key' } },
       ],
     }).compile();
 
@@ -226,36 +224,26 @@ describe('ChatController routes', () => {
   });
 
   it('the stop route cancels the runs of the session and answers 204', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { app } = await createApp();
+    const { app, client } = await createApp();
+    client.runs.list.mockResolvedValue([{ run_id: 'run-1', status: 'running' }]);
 
     const response = await request(app.getHttpServer()).post(`/v1/chat/sessions/${THREAD_ID}/stop`);
 
     expect(response.status).toBe(204);
-    expect(fetchMock).toHaveBeenCalledWith(
-      `${API_URL}/threads/${THREAD_ID}/runs/cancel`,
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ action: 'interrupt' }),
-      }),
-    );
-    const init = fetchMock.mock.calls[0][1] as RequestInit;
-    expect((init.headers as Record<string, string>)['x-api-key']).toBe('test-key');
+    expect(client.runs.cancel).toHaveBeenCalledWith(THREAD_ID, 'run-1', true, 'interrupt');
     await app.close();
-    vi.unstubAllGlobals();
   });
 
   it('the stop route answers 404 for an unknown session', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { app } = await createApp();
+    const { app, client } = await createApp();
+    client.runs.list.mockRejectedValue(
+      Object.assign(new Error('HTTP 404: Not Found'), { status: 404 }),
+    );
 
     const response = await request(app.getHttpServer()).post('/v1/chat/sessions/ses_missing/stop');
 
     expect(response.status).toBe(404);
     await app.close();
-    vi.unstubAllGlobals();
   });
 
   it('closing the response does not call runs.cancel', async () => {

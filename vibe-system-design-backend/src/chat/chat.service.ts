@@ -2,10 +2,6 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Client, Thread } from '@langchain/langgraph-sdk';
 
 import { AGENT_SERVER_CLIENT } from '../agent-server/agent-server.module.js';
-import {
-  AGENT_SERVER_CONFIG,
-  type AgentServerConfig,
-} from '../agent-server/agent-server.config.js';
 import { ASSISTANT_ID } from './chat.constants.js';
 import { ProtocolAdapter, type AgentServerChunk } from './protocol-adapter.js';
 import { cutTitle } from '../utils/cut-title.js';
@@ -66,10 +62,7 @@ function extractText(content: unknown): string {
 export class ChatService {
   private readonly logger = new AppLogger(ChatService.name);
 
-  constructor(
-    @Inject(AGENT_SERVER_CLIENT) private readonly client: Client,
-    @Inject(AGENT_SERVER_CONFIG) private readonly config: AgentServerConfig,
-  ) {}
+  constructor(@Inject(AGENT_SERVER_CLIENT) private readonly client: Client) {}
 
   @Timed()
   async listSessions(): Promise<SessionSummary[]> {
@@ -236,33 +229,48 @@ export class ChatService {
   }
 
   /**
-   * Cancel the pending runs of a session.
+   * Interrupt the pending and running runs of a session.
    *
-   * The SDK `cancel` needs a run id, but the UI knows only the session. The
-   * raw endpoint cancels every run of the thread with one request.
+   * The UI knows only the session, and the Agent Server refuses a cancel that
+   * mixes `status` with `thread_id`. This code lists the runs of the thread,
+   * keeps the active ones, and interrupts each by id. The `interrupt` action
+   * stops the run and keeps its checkpoints, so the thread state stays
+   * readable.
    */
+  @Timed({ metaData: (args) => ({ sessionId: args[0] }) })
   async stopSession(sessionId: string): Promise<void> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (this.config.apiKey !== undefined) {
-      headers['x-api-key'] = this.config.apiKey;
-    }
-    const response = await fetch(
-      `${this.config.apiUrl}/threads/${sessionId}/runs/cancel`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ action: 'interrupt' }),
-      },
-    );
-    if (response.status === 404) {
-      throw new NotFoundException(`The session ${sessionId} does not exist.`);
-    }
-    if (!response.ok) {
-      throw new Error(
-        `The Agent Server cancel failed with status ${response.status}.`,
+    try {
+      const runs = await this.client.runs.list(sessionId, { limit: 100 });
+      const active = runs.filter(
+        (run) => run.status === 'pending' || run.status === 'running',
       );
+      await Promise.all(
+        active.map(async (run) => {
+          try {
+            await this.client.runs.cancel(
+              sessionId,
+              run.run_id,
+              true,
+              'interrupt',
+            );
+          } catch (err) {
+            // The run finished between the list and the cancel. That run is
+            // already stopped, so the stop stays idempotent.
+            if (!isNotFound(err)) throw err;
+          }
+        }),
+      );
+      this.logger.info('Stopped chat session successfully', {
+        sessionId,
+        runs: active.length,
+      });
+    } catch (err) {
+      // A missing thread is the same 404 the repository answered before.
+      if (isNotFound(err)) {
+        throw new NotFoundException(`The session ${sessionId} does not exist.`);
+      }
+      this.logger.error(`Failed to stop chat session ${sessionId}`, err);
+      throw err;
     }
   }
 

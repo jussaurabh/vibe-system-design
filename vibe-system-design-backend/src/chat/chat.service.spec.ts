@@ -1,7 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import type { Client, Thread } from '@langchain/langgraph-sdk';
 
-import type { AgentServerConfig } from '../agent-server/agent-server.config.js';
 import { ChatService, toSessionSummary } from './chat.service.js';
 import type { AgentServerChunk } from './protocol-adapter.js';
 import type { ProtocolEvent } from '../utils/protocol-event.js';
@@ -9,11 +8,6 @@ import type { ProtocolEvent } from '../utils/protocol-event.js';
 const THREAD_ID = '123e4567-e89b-42d3-a456-426614174000';
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
 const UPDATED_AT = '2026-01-02T00:00:00.000Z';
-
-const CONFIG: AgentServerConfig = {
-  apiUrl: 'http://localhost:2024',
-  apiKey: 'test-key',
-};
 
 function threadFixture(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -80,6 +74,7 @@ function stubClient() {
     },
     runs: {
       stream: vi.fn().mockReturnValue(chunkStream([])),
+      list: vi.fn().mockResolvedValue([]),
       cancel: vi.fn().mockResolvedValue(undefined),
     },
   };
@@ -87,7 +82,7 @@ function stubClient() {
 
 function buildService(client = stubClient()) {
   return {
-    service: new ChatService(client as unknown as Client, CONFIG),
+    service: new ChatService(client as unknown as Client),
     client,
   };
 }
@@ -152,35 +147,43 @@ describe('ChatService stream proxy', () => {
 });
 
 describe('ChatService stop', () => {
-  it('stopSession cancels the runs of the thread through the API', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 204 }));
-    vi.stubGlobal('fetch', fetchMock);
+  it('stopSession interrupts the active runs of the thread', async () => {
     const { service, client } = buildService();
+    client.runs.list.mockResolvedValue([
+      { run_id: 'run-done', status: 'success' },
+      { run_id: 'run-busy', status: 'running' },
+      { run_id: 'run-queued', status: 'pending' },
+    ]);
 
     await service.stopSession(THREAD_ID);
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      `http://localhost:2024/threads/${THREAD_ID}/runs/cancel`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': 'test-key',
-        },
-        body: JSON.stringify({ action: 'interrupt' }),
-      },
+    expect(client.runs.list).toHaveBeenCalledWith(THREAD_ID, { limit: 100 });
+    expect(client.runs.cancel).toHaveBeenCalledTimes(2);
+    expect(client.runs.cancel).toHaveBeenCalledWith(
+      THREAD_ID,
+      'run-busy',
+      true,
+      'interrupt',
     );
-    expect(client.runs.cancel).not.toHaveBeenCalled();
+    expect(client.runs.cancel).toHaveBeenCalledWith(
+      THREAD_ID,
+      'run-queued',
+      true,
+      'interrupt',
+    );
+  });
+
+  it('a run that ends before the cancel is not an error', async () => {
+    const { service, client } = buildService();
+    client.runs.list.mockResolvedValue([{ run_id: 'run-1', status: 'running' }]);
+    client.runs.cancel.mockRejectedValue(notFound());
+
+    await expect(service.stopSession(THREAD_ID)).resolves.toBeUndefined();
   });
 
   it('a missing session is a 404 on stop', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 404 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const { service } = buildService();
+    const { service, client } = buildService();
+    client.runs.list.mockRejectedValue(notFound());
 
     await expect(service.stopSession(THREAD_ID)).rejects.toBeInstanceOf(
       NotFoundException,
