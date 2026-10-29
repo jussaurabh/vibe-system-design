@@ -7,7 +7,7 @@ services:
     pull_policy: never
     ports:
       - "8123:8000"
-    env_file: .env.docker
+    env_file: .env
     # Redis comes from outside this compose file (a locally running container
     # or a managed instance). REDIS_URI in .env.docker decides where. The
     # host-gateway mapping keeps host.docker.internal working on Linux too.
