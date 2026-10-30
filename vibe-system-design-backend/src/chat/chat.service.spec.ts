@@ -98,7 +98,11 @@ describe('ChatService stream proxy', () => {
     }
 
     expect(client.runs.stream).toHaveBeenCalledWith(THREAD_ID, 'agent', {
-      input: { messages: [{ role: 'user', content: 'hi' }] },
+      input: {
+        messages: [
+          { role: 'user', content: '<user_prompt>\nhi\n</user_prompt>' },
+        ],
+      },
       streamMode: ['messages-tuple', 'updates'],
     });
     expect(events.map((event) => [event.seq, event.method])).toEqual([

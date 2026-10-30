@@ -30,9 +30,8 @@ describe('agent graph', () => {
     expect(createDeepAgentMock).toHaveBeenCalledTimes(1);
     const options = createDeepAgentMock.mock.calls[0][0];
     expect(options.name).toBe('vibe-system-design');
-    expect(options.systemPrompt).toBe(
-      'You are a friendly, concise assistant. Chat naturally with the user and keep answers short.',
-    );
+    expect(options.systemPrompt).toContain('Expert teacher of high-level (HLD) and low-level (LLD) software system design');
+    expect(options.systemPrompt).toContain('<user_prompt>');
     expect(options.model).toEqual({ mocked: 'model' });
     expect(options).not.toHaveProperty('checkpointer');
   });

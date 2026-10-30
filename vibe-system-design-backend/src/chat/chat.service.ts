@@ -287,7 +287,11 @@ export class ChatService {
   ): AsyncIterable<ProtocolEvent> {
     const adapter = new ProtocolAdapter();
     const chunks = this.client.runs.stream(sessionId, ASSISTANT_ID, {
-      input: { messages: [{ role: 'user', content: message }] },
+      input: {
+        messages: [
+          { role: 'user', content: `<user_prompt>\n${message}\n</user_prompt>` },
+        ],
+      },
       streamMode: ['messages-tuple', 'updates'],
     });
     for await (const chunk of chunks as AsyncIterable<AgentServerChunk>) {
