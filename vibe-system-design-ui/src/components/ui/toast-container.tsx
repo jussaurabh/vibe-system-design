@@ -15,7 +15,7 @@ export function ToastContainer() {
       {toasts.map((toast) => (
         <div key={toast.id} className="pointer-events-auto">
           <Alert variant="default" className="w-64 min-w-0">
-            <AlertDescription className="text-center py-1">
+            <AlertDescription className="text-left py-1">
               {toast.message}
             </AlertDescription>
           </Alert>
