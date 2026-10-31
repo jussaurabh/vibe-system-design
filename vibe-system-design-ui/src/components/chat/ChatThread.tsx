@@ -58,6 +58,19 @@ function PendingAssistant() {
   return <TypingIndicator />;
 }
 
+function AssistantText() {
+  const streaming = useAuiState((s) => s.part.status.type === "running");
+  return (
+    <div
+      data-testid="assistant-text"
+      data-streaming={streaming ? "true" : undefined}
+      className="aui-message__text"
+    >
+      <MarkdownText />
+    </div>
+  );
+}
+
 function AssistantMessage() {
   const typing = useAuiState((s) => {
     if (s.message.status?.type !== "running") return false;
@@ -74,7 +87,7 @@ function AssistantMessage() {
       {typing ? (
         <TypingIndicator />
       ) : (
-        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+        <MessagePrimitive.Parts components={{ Text: AssistantText }} />
       )}
     </MessagePrimitive.Root>
   );

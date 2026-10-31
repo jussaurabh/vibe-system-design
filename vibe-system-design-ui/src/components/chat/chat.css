@@ -565,6 +565,32 @@
   }
 }
 
+/* Streaming cursor on the last block of the assistant message. */
+.aui-message__text {
+  min-width: 0;
+}
+
+.aui-message__text[data-streaming="true"]
+  > :is(p, h1, h2, h3, h4, h5, h6, li, blockquote):last-child::after,
+.aui-message__text[data-streaming="true"]
+  > :is(ul, ol):last-child
+  > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: aui-cursor-blink 1s steps(2, start) infinite;
+}
+
+@keyframes aui-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aui-typing__dot,
   .aui-message__text[data-streaming="true"] ::after {

@@ -391,6 +391,51 @@ describe("ChatPanel", () => {
     stream.close();
   });
 
+  it("marks the assistant text while it is streaming", async () => {
+    const stream = createSseStream();
+    vi.stubGlobal("fetch", mockApi({ stream }));
+
+    const user = userEvent.setup();
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Hello{Enter}");
+
+    act(() => {
+      stream.push(dataFrame({ event: "message-start", id: "m-1", role: "ai" }));
+      stream.push(
+        dataFrame({
+          event: "content-block-start",
+          index: 0,
+          content: { type: "text", text: "" },
+        }),
+      );
+      stream.push(
+        dataFrame({
+          event: "content-block-delta",
+          index: 0,
+          delta: { type: "text-delta", text: "Hel" },
+        }),
+      );
+    });
+
+    const text = await screen.findByTestId("assistant-text");
+    expect(text).toHaveAttribute("data-streaming", "true");
+
+    act(() => {
+      stream.push(dataFrame({ event: "message-finish", reason: "stop" }));
+      stream.push(DONE_FRAME);
+    });
+    stream.close();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("assistant-text")).not.toHaveAttribute(
+        "data-streaming",
+      ),
+    );
+  });
+
   it("stops the stream when the stop button runs", async () => {
     const stream = createSseStream();
     vi.stubGlobal("fetch", mockApi({ stream }));
