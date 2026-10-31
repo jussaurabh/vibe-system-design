@@ -5,4 +5,8 @@ fileignoreconfig:
   checksum: 1a9a6207d3bda11bedf2506430a0bab93cdab47aa4d1c730ad9f6265fc4b1823
 - filename: vibe-system-design-ui/src/components/chat/__tests__/ChatPanel.test.tsx
   checksum: 065a78a7c0d3e157cdfa4f06947bd574262b28b52020d48d2435f8baa58ed97e
+- filename: bun.lock
+  checksum: 63256b8c660759d8c27f9f9cf8fbd0002c32043f6d3f01ddd7dea02e0fcc8624
+- filename: vibe-system-design-ui/src/components/ui/toast-container.tsx
+  checksum: c3a6a0fbd409601fa22b4f3bd1e0210f82ae67248cba1c425f4e00a9f8d6e88c
 version: "1.0"
