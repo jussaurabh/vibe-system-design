@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "../ChatPanel";
@@ -339,7 +339,7 @@ describe("ChatPanel", () => {
     expect(input).toBeDisabled();
   });
 
-  it("shows a running indicator while a stream is running", async () => {
+  it("shows a bare typing indicator until the first token arrives", async () => {
     const stream = createSseStream();
     vi.stubGlobal("fetch", mockApi({ stream }));
 
@@ -348,11 +348,47 @@ describe("ChatPanel", () => {
     const input = await screen.findByRole("textbox", { name: /composer/i });
     await waitFor(() => expect(input).not.toBeDisabled());
 
-    expect(screen.queryByTestId("chat-running")).not.toBeInTheDocument();
     await user.click(input);
     await user.keyboard("Hello{Enter}");
 
-    expect(await screen.findByTestId("chat-running")).toBeInTheDocument();
+    // No assistant message exists yet, so the pending indicator renders.
+    expect(await screen.findByTestId("chat-typing")).toBeInTheDocument();
+    expect(screen.queryByTestId("chat-running")).not.toBeInTheDocument();
+
+    act(() => {
+      stream.push(dataFrame({ event: "message-start", id: "m-1", role: "ai" }));
+      stream.push(
+        dataFrame({
+          event: "content-block-start",
+          index: 0,
+          content: { type: "text", text: "" },
+        }),
+      );
+    });
+
+    // The empty assistant message keeps the indicator in the same place.
+    await waitFor(() =>
+      expect(screen.getByTestId("assistant-message")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("chat-typing")).toBeInTheDocument();
+
+    act(() => {
+      stream.push(
+        dataFrame({
+          event: "content-block-delta",
+          index: 0,
+          delta: { type: "text-delta", text: "Hi" },
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("assistant-message")).toHaveTextContent("Hi"),
+    );
+    expect(screen.queryByTestId("chat-typing")).not.toBeInTheDocument();
+
+    act(() => stream.push(DONE_FRAME));
+    stream.close();
   });
 
   it("stops the stream when the stop button runs", async () => {

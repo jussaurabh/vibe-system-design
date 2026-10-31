@@ -34,13 +34,48 @@ function UserMessage() {
   );
 }
 
+function TypingIndicator() {
+  return (
+    <div
+      data-testid="chat-typing"
+      role="status"
+      aria-label="Assistant is typing"
+      className="aui-typing"
+    >
+      <span className="aui-typing__dot" />
+      <span className="aui-typing__dot" />
+      <span className="aui-typing__dot" />
+    </div>
+  );
+}
+
+function PendingAssistant() {
+  const waiting = useAuiState((s) => {
+    if (!s.thread.isRunning) return false;
+    return s.thread.messages.at(-1)?.role === "user";
+  });
+  if (!waiting) return null;
+  return <TypingIndicator />;
+}
+
 function AssistantMessage() {
+  const typing = useAuiState((s) => {
+    if (s.message.status?.type !== "running") return false;
+    return !s.message.parts.some(
+      (part) => part.type === "text" && part.text.length > 0,
+    );
+  });
+
   return (
     <MessagePrimitive.Root
       data-testid="assistant-message"
       className="aui-message aui-message--assistant"
     >
-      <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      {typing ? (
+        <TypingIndicator />
+      ) : (
+        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      )}
     </MessagePrimitive.Root>
   );
 }
@@ -63,22 +98,6 @@ function StopButton() {
     >
       <Square className="aui-composer__stop-icon" aria-hidden="true" />
     </button>
-  );
-}
-
-/** Indicator that the assistant is still writing. */
-function RunningIndicator() {
-  const isRunning = useAuiState((s) => s.thread.isRunning);
-  if (!isRunning) return null;
-
-  return (
-    <div
-      data-testid="chat-running"
-      role="status"
-      className="aui-chat-running px-4 pt-2 text-sm text-muted-foreground"
-    >
-      Generating…
-    </div>
   );
 }
 
@@ -106,7 +125,6 @@ function Composer({ disabled }: { disabled: boolean }) {
         </ComposerPrimitive.Send>
         <StopButton />
       </ComposerPrimitive.Root>
-      <RunningIndicator />
     </div>
   );
 }
@@ -136,6 +154,7 @@ export function ChatThread({
             <ThreadPrimitive.Messages
               components={{ UserMessage, AssistantMessage }}
             />
+            <PendingAssistant />
           </div>
         </ThreadPrimitive.Viewport>
 
