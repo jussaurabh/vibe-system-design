@@ -1,5 +1,5 @@
+import React from "react";
 import {
-  ActionBarPrimitive,
   AssistantRuntimeProvider,
   ComposerPrimitive,
   MessagePrimitive,
@@ -26,22 +26,29 @@ function MarkdownText() {
 }
 
 function UserMessage() {
+  const [showActions, setShowActions] = React.useState(false);
+
   return (
     <MessagePrimitive.Root
       data-testid="user-message"
       className="aui-message aui-message--user bg-primary text-primary-foreground"
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
     >
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
-      <ActionBarPrimitive.Root
-        autohide="always"
-        data-testid="user-actions"
-        className="aui-message-actions aui-message__actions--user"
-      >
-        <CopyMessageButton label="Copy message" transform={stripUserPromptTags} />
-        <button type="button" aria-label="Edit message" className="aui-message-action">
-          <Pencil className="aui-message-action__icon" aria-hidden="true" />
-        </button>
-      </ActionBarPrimitive.Root>
+      {showActions && (
+        <div
+          className="aui-message-actions aui-message__actions--user"
+          data-testid="user-actions"
+          onMouseEnter={() => setShowActions(true)}
+          onMouseLeave={() => setShowActions(false)}
+        >
+          <CopyMessageButton label="Copy message" transform={stripUserPromptTags} />
+          <button type="button" aria-label="Edit message" className="aui-message-action">
+            <Pencil className="aui-message-action__icon" aria-hidden="true" />
+          </button>
+        </div>
+      )}
     </MessagePrimitive.Root>
   );
 }
@@ -116,6 +123,15 @@ function CopyMessageButton({
   transform?: (text: string) => string;
 }) {
   const aui = useAui();
+  const [copied, setCopied] = React.useState(false);
+
+  React.useEffect(() => {
+    if (copied) {
+      const timer = setTimeout(() => setCopied(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [copied]);
+
   return (
     <button
       type="button"
@@ -125,9 +141,11 @@ function CopyMessageButton({
         const text = aui.message.getCopyText();
         const value = transform ? transform(text) : text;
         void navigator.clipboard?.writeText(value)?.catch(() => {});
+        setCopied(true);
       }}
     >
       <Copy className="aui-message-action__icon" aria-hidden="true" />
+      {copied && <span className="aui-message-action__copied">Copied</span>}
     </button>
   );
 }

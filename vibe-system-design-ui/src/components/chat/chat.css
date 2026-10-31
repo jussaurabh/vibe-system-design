@@ -623,6 +623,31 @@
   height: 14px;
 }
 
+.aui-message-action__copied {
+  position: absolute;
+  top: -20px;
+  right: 0;
+  font-size: 11px;
+  color: var(--muted-foreground, #615d59);
+  white-space: nowrap;
+  animation: aui-copied-fade 1.5s ease-out forwards;
+}
+
+@keyframes aui-copied-fade {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
 /* User message action row: absolute below the bubble, right-aligned. */
 .aui-message__actions--user {
   position: absolute;
