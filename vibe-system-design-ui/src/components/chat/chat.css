@@ -623,6 +623,20 @@
   height: 14px;
 }
 
+/* User message action row: absolute below the bubble, right-aligned. */
+.aui-message__actions--user {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  margin-top: 0;
+}
+
+/* Reserve space below the user bubble so the action row doesn't shift siblings. */
+.aui-message--user {
+  position: relative;
+  margin-bottom: 20px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aui-typing__dot,
   .aui-message__text[data-streaming="true"] ::after {

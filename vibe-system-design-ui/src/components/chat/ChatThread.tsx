@@ -1,4 +1,5 @@
 import {
+  ActionBarPrimitive,
   AssistantRuntimeProvider,
   ComposerPrimitive,
   MessagePrimitive,
@@ -8,8 +9,9 @@ import {
   type AssistantRuntime,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, Copy, Square, ThumbsDown, ThumbsUp } from "lucide-react";
+import { ArrowUp, Copy, Pencil, Square, ThumbsDown, ThumbsUp } from "lucide-react";
 import remarkGfm from "remark-gfm";
+import { stripUserPromptTags } from "../../lib/chat-text";
 import "./chat.css";
 
 // GitHub tables and other GFM constructs need this plugin.
@@ -30,6 +32,16 @@ function UserMessage() {
       className="aui-message aui-message--user bg-primary text-primary-foreground"
     >
       <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      <ActionBarPrimitive.Root
+        autohide="always"
+        data-testid="user-actions"
+        className="aui-message-actions aui-message__actions--user"
+      >
+        <CopyMessageButton label="Copy message" transform={stripUserPromptTags} />
+        <button type="button" aria-label="Edit message" className="aui-message-action">
+          <Pencil className="aui-message-action__icon" aria-hidden="true" />
+        </button>
+      </ActionBarPrimitive.Root>
     </MessagePrimitive.Root>
   );
 }

@@ -603,6 +603,60 @@ describe("ChatPanel", () => {
     ).resolves.not.toThrow();
   });
 
+  it("reveals user actions only when the user message is hovered", async () => {
+    const stream = createSseStream();
+    vi.stubGlobal("fetch", mockApi({ stream }));
+
+    const user = userEvent.setup();
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Hello{Enter}");
+
+    const message = await screen.findByTestId("user-message");
+    expect(screen.queryByTestId("user-actions")).not.toBeInTheDocument();
+
+    fireEvent.mouseEnter(message);
+    const actions = await screen.findByTestId("user-actions");
+    expect(
+      within(actions).getByRole("button", { name: /copy message/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(actions).getByRole("button", { name: /edit message/i }),
+    ).toBeInTheDocument();
+
+    act(() => stream.push(DONE_FRAME));
+    stream.close();
+  });
+
+  it("copies the user message without the user prompt tags", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText");
+
+    vi.stubGlobal(
+      "fetch",
+      mockApi({
+        frames: [DONE_FRAME],
+      }),
+    );
+
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("<user_prompt>Hello there</user_prompt>{Enter}");
+
+    const message = await screen.findByTestId("user-message");
+    fireEvent.mouseEnter(message);
+    const actions = await screen.findByTestId("user-actions");
+    await user.click(
+      within(actions).getByRole("button", { name: /copy message/i }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith("Hello there");
+  });
+
   it("stops the stream when the stop button runs", async () => {
     const stream = createSseStream();
     vi.stubGlobal("fetch", mockApi({ stream }));

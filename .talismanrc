@@ -3,4 +3,6 @@ fileignoreconfig:
   checksum: 957f9f2ab4917c9586f5c583bb6721649369e1b3b0776dfec9b2e1eb136239a6
 - filename: vibe-system-design-agent/src/agent.ts
   checksum: 1a9a6207d3bda11bedf2506430a0bab93cdab47aa4d1c730ad9f6265fc4b1823
+- filename: vibe-system-design-ui/src/components/chat/__tests__/ChatPanel.test.tsx
+  checksum: 065a78a7c0d3e157cdfa4f06947bd574262b28b52020d48d2435f8baa58ed97e
 version: "1.0"
