@@ -235,6 +235,26 @@ describe('ChatService ensureTitle', () => {
 });
 
 describe('ChatService listMessages', () => {
+  it('listMessages strips user_prompt tags from human messages', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    try {
+      const { service, client } = buildService();
+      client.threads.getState.mockResolvedValue({
+        values: {
+          messages: [
+            { type: 'human', content: '<user_prompt>\nhi system design\n</user_prompt>', id: 'm1' },
+          ],
+        },
+      });
+
+      const messages = await service.listMessages(THREAD_ID);
+
+      expect(messages[0]?.content).toEqual([{ type: 'text', text: 'hi system design' }]);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   it('listMessages maps the thread state to stored messages', async () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
     try {

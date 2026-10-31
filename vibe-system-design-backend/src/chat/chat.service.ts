@@ -120,7 +120,10 @@ export class ChatService {
   @Timed({
     metaData: (args) => ({ sessionId: args[0], title: args[1] }),
   })
-  async renameSession(sessionId: string, title: string): Promise<SessionSummary> {
+  async renameSession(
+    sessionId: string,
+    title: string,
+  ): Promise<SessionSummary> {
     try {
       const thread = await this.client.threads.get(sessionId);
       const updated = await this.client.threads.update(sessionId, {
@@ -178,6 +181,14 @@ export class ChatService {
           typeof message['id'] === 'string' && message['id'] !== ''
             ? message['id']
             : `${sessionId}-m${index}`;
+        const rawContent = extractText(message['content']);
+        const contentText =
+          type === 'human'
+            ? rawContent.replace(
+                /^<user_prompt>\s*([\s\S]*?)\s*<\/user_prompt>$/,
+                '$1',
+              )
+            : rawContent;
         messages.push({
           id,
           sessionId,
@@ -186,7 +197,7 @@ export class ChatService {
           createdAt: Date.now(),
           seq: messages.length,
           senderType: type === 'human' ? 'user' : 'assistant',
-          content: [{ type: 'text', text: extractText(message['content']) }],
+          content: [{ type: 'text', text: contentText }],
           status: 'complete',
           tokenCount: null,
           modelName: null,
@@ -289,7 +300,10 @@ export class ChatService {
     const chunks = this.client.runs.stream(sessionId, ASSISTANT_ID, {
       input: {
         messages: [
-          { role: 'user', content: `<user_prompt>\n${message}\n</user_prompt>` },
+          {
+            role: 'user',
+            content: `<user_prompt>\n${message}\n</user_prompt>`,
+          },
         ],
       },
       streamMode: ['messages-tuple', 'updates'],

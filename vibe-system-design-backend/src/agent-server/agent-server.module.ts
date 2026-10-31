@@ -1,7 +1,10 @@
 import { Client } from '@langchain/langgraph-sdk';
 import { Module, type Provider } from '@nestjs/common';
 
-import { AGENT_SERVER_CONFIG, loadAgentServerConfig } from './agent-server.config.js';
+import {
+  AGENT_SERVER_CONFIG,
+  loadAgentServerConfig,
+} from './agent-server.config.js';
 import type { AgentServerConfig } from './agent-server.config.js';
 
 export const AGENT_SERVER_CLIENT = Symbol('AGENT_SERVER_CLIENT');
