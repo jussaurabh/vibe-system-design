@@ -1,5 +1,4 @@
-import React from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import {
   Server,
   Database,
@@ -15,6 +14,8 @@ export type CustomNodeData = {
   label: string;
   sublabel?: string;
 };
+
+export type CustomNode = Node<CustomNodeData, "custom">;
 
 // Pick a contextual icon based on label/type
 function getNodeIcon(name: string = "") {
@@ -74,7 +75,8 @@ function getNodeIcon(name: string = "") {
   return <Box className="w-3.5 h-3.5 text-[#0075de]" />;
 }
 
-export function CustomNode({ data, selected }: NodeProps<any>) {
+export function CustomNode(props: NodeProps<CustomNode>) {
+  const { data, selected } = props;
   const label = data?.label || "Node";
   const sublabel = data?.sublabel || "active service";
 

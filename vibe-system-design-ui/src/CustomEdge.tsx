@@ -5,6 +5,7 @@ import {
   getBezierPath,
   useReactFlow,
   type EdgeProps,
+  type Edge,
 } from "@xyflow/react";
 
 export type CustomEdgeData = {
@@ -12,6 +13,8 @@ export type CustomEdgeData = {
   bendOffset?: { x: number; y: number };
   labelT?: number;
 };
+
+export type CustomEdge = Edge<CustomEdgeData, "custom">;
 
 function parseCubicPath(pathStr: string) {
   const parts = pathStr.match(
@@ -60,20 +63,21 @@ function getQuadraticPoint(
   };
 }
 
-export default function CustomEdge({
-  id,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  style = {},
-  markerStart,
-  markerEnd,
-  data,
-  selected,
-}: EdgeProps<any>) {
+export default function CustomEdge(props: EdgeProps<CustomEdge>) {
+  const {
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    style = {},
+    markerStart,
+    markerEnd,
+    data,
+    selected,
+  } = props;
   const { setEdges, screenToFlowPosition } = useReactFlow();
 
   const [isHovered, setIsHovered] = useState(false);
