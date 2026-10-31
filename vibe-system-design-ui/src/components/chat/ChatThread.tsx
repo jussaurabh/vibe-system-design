@@ -29,27 +29,28 @@ function UserMessage() {
   const [showActions, setShowActions] = React.useState(false);
 
   return (
-    <MessagePrimitive.Root
-      data-testid="user-message"
-      className="aui-message aui-message--user bg-primary text-primary-foreground"
+    <div
+      className="aui-message__wrapper--user"
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
-      <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
-      {showActions && (
-        <div
-          className="aui-message-actions aui-message__actions--user"
-          data-testid="user-actions"
-          onMouseEnter={() => setShowActions(true)}
-          onMouseLeave={() => setShowActions(false)}
-        >
-          <CopyMessageButton label="Copy message" transform={stripUserPromptTags} />
-          <button type="button" aria-label="Edit message" className="aui-message-action">
-            <Pencil className="aui-message-action__icon" aria-hidden="true" />
-          </button>
-        </div>
-      )}
-    </MessagePrimitive.Root>
+      <MessagePrimitive.Root
+        data-testid="user-message"
+        className="aui-message aui-message--user bg-primary text-primary-foreground"
+      >
+        <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+      </MessagePrimitive.Root>
+      <div
+        className="aui-message-actions aui-message__actions--user"
+        data-testid="user-actions"
+        style={{ visibility: showActions ? "visible" : "hidden" }}
+      >
+        <CopyMessageButton label="Copy message" transform={stripUserPromptTags} />
+        <button type="button" aria-label="Edit message" className="aui-message-action">
+          <Pencil className="aui-message-action__icon" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
   );
 }
 

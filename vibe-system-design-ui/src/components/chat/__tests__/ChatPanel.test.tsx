@@ -615,10 +615,11 @@ describe("ChatPanel", () => {
     await user.keyboard("Hello{Enter}");
 
     const message = await screen.findByTestId("user-message");
-    expect(screen.queryByTestId("user-actions")).not.toBeInTheDocument();
+    const actions = screen.getByTestId("user-actions");
+    expect(actions).toHaveStyle({ visibility: "hidden" });
 
     fireEvent.mouseEnter(message);
-    const actions = await screen.findByTestId("user-actions");
+    expect(actions).toHaveStyle({ visibility: "visible" });
     expect(
       within(actions).getByRole("button", { name: /copy message/i }),
     ).toBeInTheDocument();

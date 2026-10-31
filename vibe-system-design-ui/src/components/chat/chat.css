@@ -648,6 +648,14 @@
   }
 }
 
+/* User message wrapper: contains bubble + action row, enables hover area extending below bubble. */
+.aui-message__wrapper--user {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 /* User message action row: absolute below the bubble, right-aligned. */
 .aui-message__actions--user {
   position: absolute;
@@ -658,7 +666,6 @@
 
 /* Reserve space below the user bubble so the action row doesn't shift siblings. */
 .aui-message--user {
-  position: relative;
   margin-bottom: 20px;
 }
 
