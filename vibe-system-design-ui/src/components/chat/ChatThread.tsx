@@ -8,7 +8,7 @@ import {
   type AssistantRuntime,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Copy, Square, ThumbsDown, ThumbsUp } from "lucide-react";
 import remarkGfm from "remark-gfm";
 import "./chat.css";
 
@@ -79,6 +79,8 @@ function AssistantMessage() {
     );
   });
 
+  const complete = useAuiState((s) => s.message.status?.type === "complete");
+
   return (
     <MessagePrimitive.Root
       data-testid="assistant-message"
@@ -89,7 +91,46 @@ function AssistantMessage() {
       ) : (
         <MessagePrimitive.Parts components={{ Text: AssistantText }} />
       )}
+      {complete ? <AssistantActions /> : null}
     </MessagePrimitive.Root>
+  );
+}
+
+function CopyMessageButton({
+  label,
+  transform,
+}: {
+  label: string;
+  transform?: (text: string) => string;
+}) {
+  const aui = useAui();
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className="aui-message-action"
+      onClick={() => {
+        const text = aui.message.getCopyText();
+        const value = transform ? transform(text) : text;
+        void navigator.clipboard?.writeText(value)?.catch(() => {});
+      }}
+    >
+      <Copy className="aui-message-action__icon" aria-hidden="true" />
+    </button>
+  );
+}
+
+function AssistantActions() {
+  return (
+    <div data-testid="assistant-actions" className="aui-message-actions">
+      <CopyMessageButton label="Copy response" />
+      <button type="button" aria-label="Good response" className="aui-message-action">
+        <ThumbsUp className="aui-message-action__icon" aria-hidden="true" />
+      </button>
+      <button type="button" aria-label="Bad response" className="aui-message-action">
+        <ThumbsDown className="aui-message-action__icon" aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 

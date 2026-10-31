@@ -436,6 +436,173 @@ describe("ChatPanel", () => {
     );
   });
 
+  it("shows assistant actions only after the stream completes", async () => {
+    const stream = createSseStream();
+    vi.stubGlobal("fetch", mockApi({ stream }));
+
+    const user = userEvent.setup();
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Hello{Enter}");
+
+    act(() => {
+      stream.push(dataFrame({ event: "message-start", id: "m-1", role: "ai" }));
+      stream.push(
+        dataFrame({
+          event: "content-block-start",
+          index: 0,
+          content: { type: "text", text: "" },
+        }),
+      );
+      stream.push(
+        dataFrame({
+          event: "content-block-delta",
+          index: 0,
+          delta: { type: "text-delta", text: MARKDOWN_DOC },
+        }),
+      );
+    });
+
+    await screen.findByTestId("assistant-text");
+    expect(screen.queryByTestId("assistant-actions")).not.toBeInTheDocument();
+
+    act(() => {
+      stream.push(dataFrame({ event: "message-finish", reason: "stop" }));
+      stream.push(DONE_FRAME);
+    });
+    stream.close();
+
+    const actions = await screen.findByTestId("assistant-actions");
+    expect(
+      within(actions).getByRole("button", { name: /copy response/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(actions).getByRole("button", { name: /good response/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(actions).getByRole("button", { name: /bad response/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps assistant actions hidden when the run is stopped", async () => {
+    const stream = createSseStream();
+    vi.stubGlobal("fetch", mockApi({ stream }));
+
+    const user = userEvent.setup();
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Hello{Enter}");
+
+    act(() => {
+      stream.push(dataFrame({ event: "message-start", id: "m-1", role: "ai" }));
+      stream.push(
+        dataFrame({
+          event: "content-block-start",
+          index: 0,
+          content: { type: "text", text: "" },
+        }),
+      );
+      stream.push(
+        dataFrame({
+          event: "content-block-delta",
+          index: 0,
+          delta: { type: "text-delta", text: "Partial answer" },
+        }),
+      );
+    });
+
+    await screen.findByText("Partial answer");
+    await user.click(
+      await screen.findByRole("button", { name: /stop generating/i }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /stop generating/i }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("assistant-actions")).not.toBeInTheDocument();
+  });
+
+  it("copies assistant markdown with its newlines", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText");
+
+    vi.stubGlobal(
+      "fetch",
+      mockApi({
+        frames: [
+          dataFrame({ event: "message-start", id: "m-doc", role: "ai" }),
+          dataFrame({
+            event: "content-block-delta",
+            index: 0,
+            delta: { type: "text-delta", text: MARKDOWN_DOC },
+          }),
+          DONE_FRAME,
+        ],
+      }),
+    );
+
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Describe{Enter}");
+
+    const actions = await screen.findByTestId(
+      "assistant-actions",
+      {},
+      { timeout: 3000 },
+    );
+    await user.click(
+      within(actions).getByRole("button", { name: /copy response/i }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith(MARKDOWN_DOC);
+  });
+
+  it("does not throw when the clipboard is unavailable", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      mockApi({
+        frames: [
+          dataFrame({ event: "message-start", id: "m-1", role: "ai" }),
+          dataFrame({
+            event: "content-block-delta",
+            index: 0,
+            delta: { type: "text-delta", text: "Hello" },
+          }),
+          DONE_FRAME,
+        ],
+      }),
+    );
+
+    render(<ChatPanel />);
+    const input = await screen.findByRole("textbox", { name: /composer/i });
+    await waitFor(() => expect(input).not.toBeDisabled());
+    await user.click(input);
+    await user.keyboard("Hello{Enter}");
+
+    const actions = await screen.findByTestId(
+      "assistant-actions",
+      {},
+      { timeout: 3000 },
+    );
+    await expect(
+      user.click(within(actions).getByRole("button", { name: /copy response/i })),
+    ).resolves.not.toThrow();
+  });
+
   it("stops the stream when the stop button runs", async () => {
     const stream = createSseStream();
     vi.stubGlobal("fetch", mockApi({ stream }));

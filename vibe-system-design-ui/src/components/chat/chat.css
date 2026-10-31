@@ -591,6 +591,38 @@
   }
 }
 
+/* Message actions (copy, feedback, edit). */
+.aui-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.aui-message-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground, #615d59);
+  cursor: pointer;
+}
+
+.aui-message-action:hover,
+.aui-message-action:focus-visible {
+  background: var(--background, #f6f5f4);
+  color: var(--foreground, #000000);
+}
+
+.aui-message-action__icon {
+  width: 14px;
+  height: 14px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aui-typing__dot,
   .aui-message__text[data-streaming="true"] ::after {
