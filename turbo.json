@@ -21,6 +21,10 @@
     },
     "format": {
       "cache": false
+    },
+    "evals": {
+      "cache": false,
+      "env": ["OPENROUTER_BASE_URL", "OPENROUTER_API_KEY", "OPENROUTER_DEFAULT_MODEL", "EVAL_JUDGE_MODEL", "EVAL_CATEGORIES"]
     }
   }
 }

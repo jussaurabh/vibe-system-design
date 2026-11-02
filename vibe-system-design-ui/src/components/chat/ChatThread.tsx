@@ -12,6 +12,7 @@ import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { ArrowUp, Copy, Pencil, Square, ThumbsDown, ThumbsUp } from "lucide-react";
 import remarkGfm from "remark-gfm";
 import { stripUserPromptTags } from "../../lib/chat-text";
+import { useToast } from "../../lib/toast";
 import "./chat.css";
 
 // GitHub tables and other GFM constructs need this plugin.
@@ -43,7 +44,7 @@ function UserMessage() {
       <div
         className="aui-message-actions aui-message__actions--user"
         data-testid="user-actions"
-        style={{ visibility: showActions ? "visible" : "hidden" }}
+        style={{ visibility: showActions ? "visible" : "hidden", marginTop: '-1.05rem' }}
       >
         <CopyMessageButton label="Copy message" transform={stripUserPromptTags} />
         <button type="button" aria-label="Edit message" className="aui-message-action">
@@ -124,14 +125,7 @@ function CopyMessageButton({
   transform?: (text: string) => string;
 }) {
   const aui = useAui();
-  const [copied, setCopied] = React.useState(false);
-
-  React.useEffect(() => {
-    if (copied) {
-      const timer = setTimeout(() => setCopied(false), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [copied]);
+  const { showToast } = useToast();
 
   return (
     <button
@@ -142,11 +136,10 @@ function CopyMessageButton({
         const text = aui.message.getCopyText();
         const value = transform ? transform(text) : text;
         void navigator.clipboard?.writeText(value)?.catch(() => {});
-        setCopied(true);
+        showToast("Copied", 3000);
       }}
     >
       <Copy className="aui-message-action__icon" aria-hidden="true" />
-      {copied && <span className="aui-message-action__copied">Copied</span>}
     </button>
   );
 }

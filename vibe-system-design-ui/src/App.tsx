@@ -201,7 +201,7 @@ const FlowEditor = () => {
         nodeOrigin={nodeOrigin}
         colorMode={theme}
         panOnScroll
-        panOnScrollMode="free"
+        // panOnScrollMode="free"
         zoomOnScroll={false}
         zoomActivationKeyCode="Meta"
       >

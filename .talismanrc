@@ -9,4 +9,10 @@ fileignoreconfig:
   checksum: 63256b8c660759d8c27f9f9cf8fbd0002c32043f6d3f01ddd7dea02e0fcc8624
 - filename: vibe-system-design-ui/src/components/ui/toast-container.tsx
   checksum: c3a6a0fbd409601fa22b4f3bd1e0210f82ae67248cba1c425f4e00a9f8d6e88c
+- filename: vibe-system-design-agent/.env.docker.example
+  checksum: 406b567ef1e26f51452c8642aa4b4a8d455438739a67852960ea57bdb0571830
+- filename: vibe-system-design-agent/.env.example
+  checksum: 1002bd54373467d0b5d0f6844f0368cae19f9c7726aadaf0702f384eb9698443
+- filename: turbo.json
+  checksum: 4b4cf598b2146f05e3c9095c85a1d184e6ee743e26b380397633257156c68dfc
 version: "1.0"

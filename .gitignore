@@ -15,3 +15,9 @@ talisman_report
 
 */playwright-report
 */test-results
+
+# Eval scorecards — local experiment records, not committed.
+vibe-system-design-agent/evals
+
+learnings
+opencode.json

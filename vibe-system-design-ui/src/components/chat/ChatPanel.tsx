@@ -5,6 +5,8 @@ import { ChatThread } from "./ChatThread";
 import { SessionDrawer } from "./SessionDrawer";
 import { useChatStream, type ChatStreamAPI } from "./useChatStream";
 import { useSessions } from "./useSessions";
+import { ToastProvider } from "../../lib/toast";
+import { ToastContainer } from "../ui/toast-container";
 import "./chat.css";
 
 /**
@@ -51,49 +53,52 @@ export function ChatPanel() {
   }, [chat.isRunning, sessions]);
 
   return (
-    <div
-      data-testid="chat-panel"
-      className="aui-chat-panel w-[35%] h-screen bg-background border-l border-border text-foreground"
-    >
-      <div className="aui-chat-header">
-        <button
-          type="button"
-          data-testid="chat-menu"
-          aria-label="Open sessions"
-          className="aui-chat-header__menu"
-          onClick={() => setDrawerOpen((open) => !open)}
-        >
-          <PanelLeft className="aui-chat-header__menu-icon" aria-hidden="true" />
-        </button>
-        <span data-testid="chat-session-title" className="aui-chat-header__title">
-          {title}
-        </span>
-      </div>
-
-      {chat.error !== null || sessions.error !== null ? (
-        <div
-          data-testid="chat-error"
-          role="alert"
-          className="aui-chat-error mx-4 mt-3 rounded-md border border-destructive bg-background px-3 py-2 text-sm text-destructive"
-        >
-          {(chat.error ?? sessions.error)?.message}
+    <ToastProvider>
+      <div
+        data-testid="chat-panel"
+        className="aui-chat-panel w-[35%] h-screen bg-background border-l border-border text-foreground"
+      >
+        <ToastContainer />
+        <div className="aui-chat-header">
+          <button
+            type="button"
+            data-testid="chat-menu"
+            aria-label="Open sessions"
+            className="aui-chat-header__menu"
+            onClick={() => setDrawerOpen((open) => !open)}
+          >
+            <PanelLeft className="aui-chat-header__menu-icon" aria-hidden="true" />
+          </button>
+          <span data-testid="chat-session-title" className="aui-chat-header__title">
+            {title}
+          </span>
         </div>
-      ) : null}
 
-      <ChatThread
-        runtime={chat.runtime}
-        disabled={sessions.activeSessionId === null}
-      />
+        {chat.error !== null || sessions.error !== null ? (
+          <div
+            data-testid="chat-error"
+            role="alert"
+            className="aui-chat-error mx-4 mt-3 rounded-md border border-destructive bg-background px-3 py-2 text-sm text-destructive"
+          >
+            {(chat.error ?? sessions.error)?.message}
+          </div>
+        ) : null}
 
-      <SessionDrawer
-        open={drawerOpen}
-        sessions={sessions.sessions}
-        activeSessionId={sessions.activeSessionId}
-        onSelect={(id) => void sessions.selectSession(id)}
-        onCreate={() => void sessions.createSession()}
-        onDelete={(id) => void sessions.removeSession(id)}
-        onClose={() => setDrawerOpen(false)}
-      />
-    </div>
+        <ChatThread
+          runtime={chat.runtime}
+          disabled={sessions.activeSessionId === null}
+        />
+
+        <SessionDrawer
+          open={drawerOpen}
+          sessions={sessions.sessions}
+          activeSessionId={sessions.activeSessionId}
+          onSelect={(id) => void sessions.selectSession(id)}
+          onCreate={() => void sessions.createSession()}
+          onDelete={(id) => void sessions.removeSession(id)}
+          onClose={() => setDrawerOpen(false)}
+        />
+      </div>
+    </ToastProvider>
   );
 }

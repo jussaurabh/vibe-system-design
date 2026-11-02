@@ -15,10 +15,12 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
+    "evals": "turbo run evals",
     "format": "turbo run format"
   },
   "devDependencies": {
     "husky": "9.1.7",
+    "shadcn": "^4.23.0",
     "turbo": "2.11.10"
   }
 }

@@ -6,6 +6,7 @@
     "lint": "oxlint --type-aware src/",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "evals": "vitest run --config vitest.eval.config.ts",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "dependencies": {
