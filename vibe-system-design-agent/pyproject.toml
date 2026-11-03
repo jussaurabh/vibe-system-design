@@ -2,7 +2,7 @@
 name = "vibe-system-design-agent"
 version = "0.1.0"
 description = "System-design teaching agent served via LangGraph"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "langchain-openai>=1.0",
     "langgraph>=1.0",
