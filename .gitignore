@@ -18,6 +18,8 @@ talisman_report
 
 # Eval scorecards — local experiment records, not committed.
 vibe-system-design-agent/evals
+vibe-system-design-agent/.venv
+vibe-system-design-agent/**/__pycache__
 
 learnings
 opencode.json
