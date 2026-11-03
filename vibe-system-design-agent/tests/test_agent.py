@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import vibe_system_design_agent.agent as agent_module
@@ -34,5 +35,5 @@ def test_builds_a_deep_agent_with_fixed_prompt_and_no_checkpointer():
 def test_system_prompt_matches_ts_source_verbatim():
     from vibe_system_design_agent.agent import SYSTEM_PROMPT
 
-    ts_prompt = open("src/agent_prompt_reference.txt").read()
+    ts_prompt = Path("src/agent_prompt_reference.txt").read_text(encoding="utf-8")
     assert SYSTEM_PROMPT == ts_prompt

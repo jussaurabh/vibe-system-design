@@ -1,18 +1,4 @@
 fileignoreconfig:
-- filename: sysprompt.txt
-  checksum: 957f9f2ab4917c9586f5c583bb6721649369e1b3b0776dfec9b2e1eb136239a6
-- filename: vibe-system-design-agent/src/agent.ts
-  checksum: 1a9a6207d3bda11bedf2506430a0bab93cdab47aa4d1c730ad9f6265fc4b1823
-- filename: vibe-system-design-ui/src/components/chat/__tests__/ChatPanel.test.tsx
-  checksum: 065a78a7c0d3e157cdfa4f06947bd574262b28b52020d48d2435f8baa58ed97e
 - filename: bun.lock
-  checksum: 63256b8c660759d8c27f9f9cf8fbd0002c32043f6d3f01ddd7dea02e0fcc8624
-- filename: vibe-system-design-ui/src/components/ui/toast-container.tsx
-  checksum: c3a6a0fbd409601fa22b4f3bd1e0210f82ae67248cba1c425f4e00a9f8d6e88c
-- filename: vibe-system-design-agent/.env.docker.example
-  checksum: 406b567ef1e26f51452c8642aa4b4a8d455438739a67852960ea57bdb0571830
-- filename: vibe-system-design-agent/.env.example
-  checksum: 1002bd54373467d0b5d0f6844f0368cae19f9c7726aadaf0702f384eb9698443
-- filename: turbo.json
-  checksum: 4b4cf598b2146f05e3c9095c85a1d184e6ee743e26b380397633257156c68dfc
+  checksum: 084610524518b61405a5fa2acce91c26b3f9e5d4795b55abc3f00ed43eae89b2
 version: "1.0"
