@@ -1,0 +1,31 @@
+[project]
+name = "vibe-system-design-agent"
+version = "0.1.0"
+description = "System-design teaching agent served via LangGraph"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain-openai>=1.0",
+    "langgraph>=1.0",
+    "deepagents>=0.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "langgraph-cli[inmem]>=0.2",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.8"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

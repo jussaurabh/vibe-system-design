@@ -1,11 +1,4 @@
-import { ChatOpenAI } from '@langchain/openai';
-import { createDeepAgent } from 'deepagents';
-
-import { loadAgentRuntimeConfig } from './config.js';
-
-export const AGENT_NAME = 'vibe-system-design';
-
-export const SYSTEM_PROMPT = `<system_prompt>
+SYSTEM_PROMPT = """<system_prompt>
 <role>
 Expert teacher of high-level (HLD) and low-level (LLD) software system design.
 </role>
@@ -49,16 +42,4 @@ Friendly, encouraging.
 <agent>I focus exclusively on system design. Let's discuss frontend architecture, state management, or component boundaries instead. What architectural pattern fits your UI needs?</agent>
 </example>
 </examples>
-</system_prompt>`;
-
-const config = loadAgentRuntimeConfig();
-
-export const agent = createDeepAgent({
-  model: new ChatOpenAI({
-    model: config.model,
-    apiKey: config.apiKey,
-    configuration: { baseURL: config.baseURL },
-  }),
-  name: AGENT_NAME,
-  systemPrompt: SYSTEM_PROMPT,
-});
+</system_prompt>"""

@@ -1,27 +1,11 @@
 {
   "name": "vibe-system-design-agent",
-  "type": "module",
+  "private": true,
   "scripts": {
-    "dev": "langgraphjs dev",
-    "lint": "oxlint --type-aware src/",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "evals": "vitest run --config vitest.eval.config.ts",
-    "format": "prettier --write \"src/**/*.ts\""
-  },
-  "dependencies": {
-    "@langchain/core": "^1.2.18",
-    "@langchain/langgraph": "^1.5.1",
-    "@langchain/openai": "^1.6.2",
-    "deepagents": "^1.15.1"
-  },
-  "devDependencies": {
-    "@langchain/langgraph-cli": "^1.5.6",
-    "@types/node": "^24.0.0",
-    "oxlint": "^1.81.0",
-    "oxlint-tsgolint": "^7.0.2001",
-    "prettier": "^3.4.2",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.2"
+    "dev": "uv run langgraph dev",
+    "test": "uv run pytest",
+    "lint": "uv run ruff check src tests",
+    "typecheck": "uv run ruff check src tests",
+    "format": "uv run ruff format src tests"
   }
 }
