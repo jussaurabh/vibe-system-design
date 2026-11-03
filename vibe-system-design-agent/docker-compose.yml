@@ -1,9 +1,9 @@
 services:
   agent-server:
     image: vibe-agent-graph:dev
-    # Built locally with `langgraphjs build -t vibe-agent-graph:dev`. Never
-    # pull: the tag exists only on this machine, and a pull attempt would hit
-    # the registry with stale credentials.
+    # Built locally with `langgraph build -t vibe-agent-graph:dev` (python
+    # agent). Never pull: the tag exists only on this machine, and a pull
+    # attempt would hit the registry with stale credentials.
     pull_policy: never
     ports:
       - "8123:8000"
