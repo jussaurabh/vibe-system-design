@@ -9,12 +9,12 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "env": ["PORT", "NODE_ENV", "AGENT_SERVER_URL", "AGENT_SERVER_API_KEY"]
+      "env": ["PORT", "NODE_ENV", "AGENT_SERVER_URL", "AGENT_SERVER_API_KEY", "DATABASE_URL"]
     },
     "lint": {},
     "typecheck": {},
     "test": {
-      "env": ["NODE_ENV"]
+      "env": ["NODE_ENV", "DATABASE_URL"]
     },
     "test:e2e": {
       "env": ["NODE_ENV"]

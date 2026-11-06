@@ -6,6 +6,7 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 
 export type MessagePart =
   | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string }
   | {
       type: 'tool';
       toolCallId: string;

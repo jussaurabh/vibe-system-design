@@ -13,8 +13,9 @@ def build_agent(env: Mapping[str, str] | None = None):
     config = load_agent_runtime_config(env)
     model = ChatOpenAI(
         model=config.model,
-        api_key=config.api_key,
+        api_key=lambda: config.api_key,
         base_url=config.base_url,
+        stream_usage=True,
     )
     return create_deep_agent(
         model=model,

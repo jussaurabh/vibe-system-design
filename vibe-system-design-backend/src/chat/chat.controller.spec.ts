@@ -11,6 +11,7 @@ import { ChatService } from './chat.service.js';
 import type { AgentServerChunk } from './protocol-adapter.js';
 import { formatDoneFrame, formatErrorFrame, formatEventFrame } from '../utils/sse.js';
 import type { ProtocolEvent } from '../utils/protocol-event.js';
+import { CHAT_MESSAGES_REPOSITORY, type ChatMessagesRepository } from './chat-messages.repository.js';
 
 const THREAD_ID = '123e4567-e89b-42d3-a456-426614174000';
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
@@ -34,6 +35,7 @@ function passingService(events: ProtocolEvent[]) {
     async getSession() {
       return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
     },
+    async beginTurn() {},
     async ensureTitle() {},
     async *stream() {
       for (const event of events) yield event;
@@ -92,6 +94,7 @@ describe('ChatController', () => {
       async getSession() {
         return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
       },
+      async beginTurn() {},
       async ensureTitle() {},
       // eslint-disable-next-line require-yield
       async *stream(): AsyncGenerator<ProtocolEvent> {
@@ -107,6 +110,53 @@ describe('ChatController', () => {
     );
 
     expect(written).toEqual([formatErrorFrame('provider exploded')]);
+  });
+
+  it('beginTurn runs before flushHeaders', async () => {
+    const order: string[] = [];
+    const { res, written } = createFakeRes();
+    const service = {
+      async getSession() {
+        return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
+      },
+      async beginTurn() {
+        order.push('beginTurn');
+      },
+      async ensureTitle() {},
+      async *stream() {
+        yield firstEvent;
+      },
+    };
+    const controller = new ChatController(service as unknown as ChatService);
+
+    await controller.stream({ sessionId: 'ses_test', message: 'hi' }, new EventEmitter() as any, res as any);
+
+    expect(order).toEqual(['beginTurn']);
+    expect(res.flushHeaders).toHaveBeenCalledOnce();
+  });
+
+  it('beginTurn rejects: controller rejects, flushHeaders not called, write not called', async () => {
+    const { res, written } = createFakeRes();
+    const service = {
+      async getSession() {
+        return { id: 'ses_test', title: '', createdAt: 1, updatedAt: 1, lastMessageAt: null };
+      },
+      async beginTurn() {
+        throw new Error('turn failed');
+      },
+      async ensureTitle() {},
+      async *stream() {
+        yield firstEvent;
+      },
+    };
+    const controller = new ChatController(service as unknown as ChatService);
+
+    await expect(
+      controller.stream({ sessionId: 'ses_test', message: 'hi' }, new EventEmitter() as any, res as any),
+    ).rejects.toThrow('turn failed');
+
+    expect(res.flushHeaders).not.toHaveBeenCalled();
+    expect(res.write).not.toHaveBeenCalled();
   });
 });
 
@@ -148,18 +198,29 @@ describe('ChatController routes', () => {
       },
     };
 
+    const messages = {
+      appendUser: vi.fn().mockResolvedValue({}),
+      appendAssistant: vi.fn().mockResolvedValue({}),
+      listByThread: vi.fn().mockResolvedValue([
+        { seq: 1, threadId: THREAD_ID, langgraphId: 'm1', role: 'user', status: 'complete', parts: [{ type: 'text', text: 'hi' }], modelName: null, inputTokens: null, outputTokens: null, reasoningTokens: null, latencyMs: null, runId: null, createdAt: new Date(CREATED_AT) },
+        { seq: 2, threadId: THREAD_ID, langgraphId: 'm2', role: 'assistant', status: 'complete', parts: [{ type: 'text', text: 'hello' }], modelName: 'test', inputTokens: 5, outputTokens: 7, reasoningTokens: 0, latencyMs: 100, runId: 'run-1', createdAt: new Date(UPDATED_AT) },
+      ]),
+      deleteByThread: vi.fn().mockResolvedValue(undefined),
+    } satisfies ChatMessagesRepository;
+
     const moduleFixture = await Test.createTestingModule({
       controllers: [ChatController],
       providers: [
         ChatService,
         { provide: AGENT_SERVER_CLIENT, useValue: client },
+        { provide: CHAT_MESSAGES_REPOSITORY, useValue: messages },
       ],
     }).compile();
 
     const app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('v1');
     await app.init();
-    return { app, client };
+    return { app, client, messages };
   }
 
   it('the list returns the threads as sessions', async () => {
@@ -211,15 +272,12 @@ describe('ChatController routes', () => {
     await app.close();
   });
 
-  it('the message list maps the thread state to messages', async () => {
+  it('the message list maps repository rows to messages', async () => {
     const { app } = await createApp();
     const response = await request(app.getHttpServer()).get(`/v1/chat/sessions/${THREAD_ID}/messages`);
 
     expect(response.status).toBe(200);
-    expect(response.body.messages.map((message: { id: string }) => message.id)).toEqual([
-      'm1',
-      'm2',
-    ]);
+    expect(response.body.messages.map((message: { id: string }) => message.id)).toEqual(['m1', 'm2']);
     await app.close();
   });
 

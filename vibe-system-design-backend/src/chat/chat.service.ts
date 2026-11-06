@@ -5,10 +5,20 @@ import { AGENT_SERVER_CLIENT } from '../agent-server/agent-server.module.js';
 import { ASSISTANT_ID } from './chat.constants.js';
 import { ProtocolAdapter, type AgentServerChunk } from './protocol-adapter.js';
 import { cutTitle } from '../utils/cut-title.js';
-import type { SessionSummary, StoredMessage } from './chat.types.js';
+import type {
+  SessionSummary,
+  StoredMessage,
+  MessageStatus,
+} from './chat.types.js';
 import type { ProtocolEvent } from '../utils/protocol-event.js';
 import { AppLogger } from '../logging/app-logger.js';
 import { Timed } from '../logging/utils/timed.js';
+import {
+  CHAT_MESSAGES_REPOSITORY,
+  type ChatMessagesRepository,
+  toStoredMessage,
+} from './chat-messages.repository.js';
+import { AssistantRecorder } from './assistant-recorder.js';
 
 /** The Agent Server answers a missing thread with an HTTP 404 error. */
 function isNotFound(err: unknown): boolean {
@@ -40,29 +50,17 @@ export function toSessionSummary(thread: Thread): SessionSummary {
   };
 }
 
-/** Extract the text of one state message, the same rule the adapter uses. */
-function extractText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  let text = '';
-  for (const block of content) {
-    if (
-      typeof block === 'object' &&
-      block !== null &&
-      (block as Record<string, unknown>)['type'] === 'text' &&
-      typeof (block as Record<string, unknown>)['text'] === 'string'
-    ) {
-      text += (block as Record<string, unknown>)['text'] as string;
-    }
-  }
-  return text;
-}
-
 @Injectable()
 export class ChatService {
   private readonly logger = new AppLogger(ChatService.name);
+  private readonly activeSessions = new Set<string>();
+  private readonly stopRequested = new Set<string>();
 
-  constructor(@Inject(AGENT_SERVER_CLIENT) private readonly client: Client) {}
+  constructor(
+    @Inject(AGENT_SERVER_CLIENT) private readonly client: Client,
+    @Inject(CHAT_MESSAGES_REPOSITORY)
+    private readonly messages: ChatMessagesRepository,
+  ) {}
 
   @Timed()
   async listSessions(): Promise<SessionSummary[]> {
@@ -154,6 +152,7 @@ export class ChatService {
         // the same as the repository delete answered before.
         if (!isNotFound(err)) throw err;
       }
+      await this.messages.deleteByThread(sessionId);
       this.logger.info('Deleted chat session successfully', {
         sessionId,
       });
@@ -166,44 +165,9 @@ export class ChatService {
   @Timed({ metaData: (args) => ({ sessionId: args[0] }) })
   async listMessages(sessionId: string): Promise<StoredMessage[]> {
     try {
-      const state = await this.client.threads.getState(sessionId);
-      const values = state as { values?: { messages?: unknown } };
-      const raw = Array.isArray(values.values?.messages)
-        ? (values.values?.messages as unknown[])
-        : [];
-
-      const messages: StoredMessage[] = [];
-      for (let index = 0; index < raw.length; index += 1) {
-        const message = raw[index] as Record<string, unknown>;
-        const type = message['type'];
-        if (type !== 'human' && type !== 'ai') continue;
-        const id =
-          typeof message['id'] === 'string' && message['id'] !== ''
-            ? message['id']
-            : `${sessionId}-m${index}`;
-        const rawContent = extractText(message['content']);
-        const contentText =
-          type === 'human'
-            ? rawContent.replace(
-                /^<user_prompt>\s*([\s\S]*?)\s*<\/user_prompt>$/,
-                '$1',
-              )
-            : rawContent;
-        messages.push({
-          id,
-          sessionId,
-          // The thread state carries no per message timestamps. The UI
-          // ignores the field.
-          createdAt: Date.now(),
-          seq: messages.length,
-          senderType: type === 'human' ? 'user' : 'assistant',
-          content: [{ type: 'text', text: contentText }],
-          status: 'complete',
-          tokenCount: null,
-          modelName: null,
-          latencyMs: null,
-        });
-      }
+      await this.client.threads.get(sessionId);
+      const rows = await this.messages.listByThread(sessionId);
+      const messages = rows.map(toStoredMessage);
 
       this.logger.info('Listed chat messages successfully', {
         sessionId,
@@ -251,6 +215,10 @@ export class ChatService {
   @Timed({ metaData: (args) => ({ sessionId: args[0] }) })
   async stopSession(sessionId: string): Promise<void> {
     try {
+      if (this.activeSessions.has(sessionId)) {
+        this.stopRequested.add(sessionId);
+      }
+
       const runs = await this.client.runs.list(sessionId, { limit: 100 });
       const active = runs.filter(
         (run) => run.status === 'pending' || run.status === 'running',
@@ -285,6 +253,10 @@ export class ChatService {
     }
   }
 
+  async beginTurn(sessionId: string, message: string): Promise<void> {
+    await this.messages.appendUser(sessionId, message);
+  }
+
   /**
    * Run the agent for one new user message and stream its protocol events.
    *
@@ -296,21 +268,75 @@ export class ChatService {
     sessionId: string,
     message: string,
   ): AsyncIterable<ProtocolEvent> {
+    const recorder = new AssistantRecorder();
     const adapter = new ProtocolAdapter();
-    const chunks = this.client.runs.stream(sessionId, ASSISTANT_ID, {
-      input: {
-        messages: [
-          {
-            role: 'user',
-            content: `<user_prompt>\n${message}\n</user_prompt>`,
-          },
-        ],
-      },
-      streamMode: ['messages-tuple', 'updates'],
-    });
-    for await (const chunk of chunks as AsyncIterable<AgentServerChunk>) {
-      for (const event of adapter.consume(chunk)) yield event;
+    const startedAt = performance.now();
+    let status: MessageStatus = 'complete';
+    let completed = false;
+    this.activeSessions.add(sessionId);
+
+    try {
+      const chunks = this.client.runs.stream(sessionId, ASSISTANT_ID, {
+        input: {
+          messages: [
+            {
+              role: 'user',
+              content: `<user_prompt>\n${message}\n</user_prompt>`,
+            },
+          ],
+        },
+        streamMode: ['messages-tuple', 'updates'],
+      });
+      for await (const chunk of chunks as AsyncIterable<AgentServerChunk>) {
+        recorder.consume(chunk);
+        for (const event of adapter.consume(chunk)) yield event;
+      }
+      this.logger.debug('All chunks consumed by recorder', { sessionId });
+      completed = true;
+      for (const event of adapter.flush()) yield event;
+    } catch (err) {
+      status = 'error';
+      throw err;
+    } finally {
+      this.activeSessions.delete(sessionId);
+      if (this.stopRequested.delete(sessionId)) {
+        status = 'incomplete';
+      } else if (!completed && status !== 'error') {
+        status = 'incomplete';
+      }
+
+      const latencyMs = Math.round(performance.now() - startedAt);
+      try {
+        const recorded = recorder.finish(status);
+        await this.messages.appendAssistant({
+          threadId: sessionId,
+          langgraphId: recorded.langgraphId,
+          status,
+          parts: recorded.parts,
+          modelName: recorded.modelName,
+          inputTokens: recorded.inputTokens,
+          outputTokens: recorded.outputTokens,
+          reasoningTokens: recorded.reasoningTokens,
+          latencyMs,
+          runId: recorded.runId,
+        });
+        this.logger.debug('Assistant message stored', {
+          sessionId,
+          langgraphId: recorded.langgraphId,
+          status,
+          partsCount: recorded.parts.length,
+          inputTokens: recorded.inputTokens,
+          outputTokens: recorded.outputTokens,
+          reasoningTokens: recorded.reasoningTokens,
+          latencyMs,
+          runId: recorded.runId,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to store the assistant message of session ${sessionId}`,
+          err,
+        );
+      }
     }
-    for (const event of adapter.flush()) yield event;
   }
 }

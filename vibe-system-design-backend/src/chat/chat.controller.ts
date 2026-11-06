@@ -178,6 +178,7 @@ export class ChatController {
     // The session is loaded before the headers go out. A missing session is a
     // 404, and the answer never becomes an event stream.
     await this.chat.getSession(parsed.data.sessionId);
+    await this.chat.beginTurn(parsed.data.sessionId, parsed.data.message);
 
     for (const [key, value] of Object.entries(SSE_HEADERS))
       res.setHeader(key, value);

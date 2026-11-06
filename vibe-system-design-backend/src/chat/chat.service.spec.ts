@@ -4,6 +4,8 @@ import type { Client, Thread } from '@langchain/langgraph-sdk';
 import { ChatService, toSessionSummary } from './chat.service.js';
 import type { AgentServerChunk } from './protocol-adapter.js';
 import type { ProtocolEvent } from '../utils/protocol-event.js';
+import type { ChatMessageRow } from '../db/schema.js';
+import { CHAT_MESSAGES_REPOSITORY, type ChatMessagesRepository } from './chat-messages.repository.js';
 
 const THREAD_ID = '123e4567-e89b-42d3-a456-426614174000';
 const CREATED_AT = '2026-01-01T00:00:00.000Z';
@@ -28,12 +30,52 @@ function notFound(): Error {
   return Object.assign(new Error('HTTP 404: Not Found'), { status: 404 });
 }
 
+/** A minimal assistant row fixture. */
+function assistantRowFixture(overrides: Partial<ChatMessageRow> = {}): ChatMessageRow {
+  return {
+    seq: 1,
+    threadId: THREAD_ID,
+    langgraphId: 'ai-1',
+    role: 'assistant',
+    status: 'complete',
+    parts: [{ type: 'text', text: 'hello' }],
+    modelName: 'test-model',
+    inputTokens: 5,
+    outputTokens: 7,
+    reasoningTokens: 2,
+    latencyMs: 100,
+    runId: 'run-1',
+    createdAt: new Date(UPDATED_AT),
+    ...overrides,
+  };
+}
+
+/** A minimal user row fixture. */
+function userRowFixture(overrides: Partial<ChatMessageRow> = {}): ChatMessageRow {
+  return {
+    seq: 0,
+    threadId: THREAD_ID,
+    langgraphId: null,
+    role: 'user',
+    status: 'complete',
+    parts: [{ type: 'text', text: 'hi' }],
+    modelName: null,
+    inputTokens: null,
+    outputTokens: null,
+    reasoningTokens: null,
+    latencyMs: null,
+    runId: null,
+    createdAt: new Date(CREATED_AT),
+    ...overrides,
+  };
+}
+
 /** The Case A chunk sequence of the ProtocolAdapter spec. */
 const CASE_A_CHUNKS: AgentServerChunk[] = [
   { event: 'metadata', data: { run_id: 'run-1' } },
   {
     event: 'messages',
-    data: [{ id: 'ai-1', content: 'Hello' }, { langgraph_node: 'model' }],
+    data: [{ id: 'ai-1', content: 'Hello', type: 'ai' }, { langgraph_node: 'model' }],
   },
   {
     event: 'messages',
@@ -41,6 +83,7 @@ const CASE_A_CHUNKS: AgentServerChunk[] = [
       {
         id: 'ai-1',
         content: ' world',
+        type: 'ai',
         usage_metadata: {
           input_tokens: 5,
           output_tokens: 7,
@@ -80,10 +123,26 @@ function stubClient() {
   };
 }
 
-function buildService(client = stubClient()) {
+/** The fake messages repository, with working defaults. */
+function stubMessages(): ChatMessagesRepository & {
+  appendUser: ReturnType<typeof vi.fn>;
+  appendAssistant: ReturnType<typeof vi.fn>;
+  listByThread: ReturnType<typeof vi.fn>;
+  deleteByThread: ReturnType<typeof vi.fn>;
+} {
   return {
-    service: new ChatService(client as unknown as Client),
+    appendUser: vi.fn().mockResolvedValue(userRowFixture()),
+    appendAssistant: vi.fn().mockResolvedValue(assistantRowFixture()),
+    listByThread: vi.fn().mockResolvedValue([userRowFixture(), assistantRowFixture()]),
+    deleteByThread: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function buildService(client = stubClient(), messages = stubMessages()) {
+  return {
+    service: new ChatService(client as unknown as Client, messages),
     client,
+    messages,
   };
 }
 
@@ -133,8 +192,6 @@ describe('ChatService stream proxy', () => {
 
   it('an upstream stream error propagates out of the stream', async () => {
     const { service, client } = buildService();
-    // The failure comes from the iteration itself. The service wraps no
-    // try/catch around it, so the error reaches the controller.
     client.runs.stream.mockImplementation(() => ({
       [Symbol.asyncIterator]: async function* () {
         yield CASE_A_CHUNKS[0];
@@ -148,11 +205,87 @@ describe('ChatService stream proxy', () => {
       }
     }).rejects.toThrow('the run exploded');
   });
+
+  it('beginTurn is called before the stream starts', async () => {
+    const { service, client, messages } = buildService();
+    client.runs.stream.mockReturnValue(chunkStream(CASE_A_CHUNKS));
+
+    await service.beginTurn(THREAD_ID, 'hi');
+    for await (const _event of service.stream(THREAD_ID, 'hi')) {
+      // consume
+    }
+
+    expect(messages.appendUser).toHaveBeenCalledWith(THREAD_ID, 'hi');
+  });
+
+  it('appendAssistant is called at stream end with complete status', async () => {
+    const { service, client, messages } = buildService();
+    client.runs.stream.mockReturnValue(chunkStream(CASE_A_CHUNKS));
+
+    for await (const _event of service.stream(THREAD_ID, 'hi')) {
+      // consume
+    }
+
+    expect(messages.appendAssistant).toHaveBeenCalledOnce();
+    const args = messages.appendAssistant.mock.calls[0][0];
+    expect(args.threadId).toBe(THREAD_ID);
+    expect(args.status).toBe('complete');
+    expect(args.langgraphId).toBe('ai-1');
+  });
+
+  it('appendAssistant is called with error status when stream throws', async () => {
+    const { service, client, messages } = buildService();
+    client.runs.stream.mockImplementation(() => ({
+      [Symbol.asyncIterator]: async function* () {
+        yield CASE_A_CHUNKS[0];
+        yield CASE_A_CHUNKS[1];
+        throw new Error('the run exploded');
+      },
+    }));
+
+    await expect(async () => {
+      for await (const _event of service.stream(THREAD_ID, 'hi')) {
+        // consume
+      }
+    }).rejects.toThrow('the run exploded');
+
+    expect(messages.appendAssistant).toHaveBeenCalledOnce();
+    const args = messages.appendAssistant.mock.calls[0][0];
+    expect(args.status).toBe('error');
+  });
+
+  it('appendAssistant is called with incomplete status when generator is cancelled', async () => {
+    const { service, client, messages } = buildService();
+    // Mock stream to yield one chunk then wait, so generator pauses at for await
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    client.runs.stream.mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield { event: 'metadata', data: { run_id: 'run-1' } };
+        await gate;
+        yield { event: 'messages', data: [{ id: 'ai-1', content: 'done', type: 'ai' }, {}] };
+      },
+    });
+
+    const streamIter = service.stream(THREAD_ID, 'hi') as unknown as AsyncIterator<ProtocolEvent>;
+    const first = await streamIter.next();
+    expect(first.done).toBe(false);
+    // Cancel the generator before releasing the gate
+    await streamIter.return?.();
+    // Release gate to avoid unhandled promise
+    releaseGate();
+
+    expect(messages.appendAssistant).toHaveBeenCalledOnce();
+    const args = messages.appendAssistant.mock.calls[0][0];
+    expect(args.status).toBe('incomplete');
+  });
 });
 
 describe('ChatService stop', () => {
   it('stopSession interrupts the active runs of the thread', async () => {
-    const { service, client } = buildService();
+    const { service, client, messages } = buildService();
     client.runs.list.mockResolvedValue([
       { run_id: 'run-done', status: 'success' },
       { run_id: 'run-busy', status: 'running' },
@@ -178,7 +311,7 @@ describe('ChatService stop', () => {
   });
 
   it('a run that ends before the cancel is not an error', async () => {
-    const { service, client } = buildService();
+    const { service, client, messages } = buildService();
     client.runs.list.mockResolvedValue([{ run_id: 'run-1', status: 'running' }]);
     client.runs.cancel.mockRejectedValue(notFound());
 
@@ -186,18 +319,57 @@ describe('ChatService stop', () => {
   });
 
   it('a missing session is a 404 on stop', async () => {
-    const { service, client } = buildService();
+    const { service, client, messages } = buildService();
     client.runs.list.mockRejectedValue(notFound());
 
     await expect(service.stopSession(THREAD_ID)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
+
+  it('stopSession marks the session as stopRequested when active', async () => {
+    const { service, client, messages } = buildService();
+
+    // Create a gated stream that we can control
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    client.runs.stream.mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield { event: 'metadata', data: { run_id: 'run-1' } };
+        await gate;
+        yield { event: 'messages', data: [{ id: 'ai-1', content: 'done', type: 'ai' }, {}] };
+      },
+    });
+    client.runs.list.mockResolvedValue([{ run_id: 'run-1', status: 'running' }]);
+
+    // Start a stream
+    const streamPromise = (async () => {
+      for await (const _ of service.stream(THREAD_ID, 'hi')) {
+        // consume
+      }
+    })();
+
+    // Wait for stream to start (activeSessions will have the session)
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Call stopSession while stream is active
+    await service.stopSession(THREAD_ID);
+
+    // Release the gate to let stream complete
+    releaseGate();
+    await streamPromise;
+
+    expect(messages.appendAssistant).toHaveBeenCalled();
+    const args = messages.appendAssistant.mock.calls[0][0];
+    expect(args.status).toBe('incomplete');
+  });
 });
 
 describe('ChatService ensureTitle', () => {
   it('ensureTitle writes the cut title into the empty thread metadata', async () => {
-    const { service, client } = buildService();
+    const { service, client, messages } = buildService();
     client.threads.get.mockResolvedValue(threadFixture({ metadata: {} }));
 
     await service.ensureTitle(THREAD_ID, 'a'.repeat(200));
@@ -209,7 +381,7 @@ describe('ChatService ensureTitle', () => {
   });
 
   it('ensureTitle keeps the other metadata keys', async () => {
-    const { service, client } = buildService();
+    const { service, client, messages } = buildService();
     client.threads.get.mockResolvedValue(
       threadFixture({ metadata: { source: 'input', title: '' } }),
     );
@@ -222,7 +394,7 @@ describe('ChatService ensureTitle', () => {
   });
 
   it('ensureTitle does nothing when the title is set', async () => {
-    const { service, client } = buildService();
+    const { service, client, messages } = buildService();
     client.threads.get.mockResolvedValue(
       threadFixture({ metadata: { title: 'Already named' } }),
     );
@@ -235,110 +407,57 @@ describe('ChatService ensureTitle', () => {
 });
 
 describe('ChatService listMessages', () => {
-  it('listMessages strips user_prompt tags from human messages', async () => {
-    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
-    try {
-      const { service, client } = buildService();
-      client.threads.getState.mockResolvedValue({
-        values: {
-          messages: [
-            { type: 'human', content: '<user_prompt>\nhi system design\n</user_prompt>', id: 'm1' },
-          ],
-        },
-      });
+  it('listMessages returns repository rows mapped to StoredMessage', async () => {
+    const { service, client, messages } = buildService();
+    messages.listByThread.mockResolvedValue([
+      userRowFixture({ seq: 0, parts: [{ type: 'text', text: 'hi' }] }),
+      assistantRowFixture({ seq: 1, parts: [{ type: 'text', text: 'hello' }] }),
+    ]);
 
-      const messages = await service.listMessages(THREAD_ID);
+    const result = await service.listMessages(THREAD_ID);
 
-      expect(messages[0]?.content).toEqual([{ type: 'text', text: 'hi system design' }]);
-    } finally {
-      now.mockRestore();
-    }
-  });
-
-  it('listMessages maps the thread state to stored messages', async () => {
-    const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
-    try {
-      const { service, client } = buildService();
-      client.threads.getState.mockResolvedValue({
-        values: {
-          messages: [
-            { type: 'human', content: 'hi', id: 'm1' },
-            { type: 'ai', content: [{ type: 'text', text: 'hello' }], id: 'm2' },
-            { type: 'tool', content: 'ignored' },
-          ],
-        },
-      });
-
-      const messages = await service.listMessages(THREAD_ID);
-
-      expect(client.threads.getState).toHaveBeenCalledWith(THREAD_ID);
-      expect(messages).toEqual([
-        {
-          id: 'm1',
-          sessionId: THREAD_ID,
-          createdAt: 1_700_000_000_000,
-          seq: 0,
-          senderType: 'user',
-          content: [{ type: 'text', text: 'hi' }],
-          status: 'complete',
-          tokenCount: null,
-          modelName: null,
-          latencyMs: null,
-        },
-        {
-          id: 'm2',
-          sessionId: THREAD_ID,
-          createdAt: 1_700_000_000_000,
-          seq: 1,
-          senderType: 'assistant',
-          content: [{ type: 'text', text: 'hello' }],
-          status: 'complete',
-          tokenCount: null,
-          modelName: null,
-          latencyMs: null,
-        },
-      ]);
-    } finally {
-      now.mockRestore();
-    }
+    expect(client.threads.get).toHaveBeenCalledWith(THREAD_ID);
+    expect(messages.listByThread).toHaveBeenCalledWith(THREAD_ID);
+    expect(result).toHaveLength(2);
+    expect(result[0].senderType).toBe('user');
+    expect(result[1].senderType).toBe('assistant');
   });
 
   it('listMessages answers an empty list for a thread that never ran', async () => {
-    const { service, client } = buildService();
-    client.threads.getState.mockResolvedValue({ values: {} });
+    const { service, client, messages } = buildService();
+    messages.listByThread.mockResolvedValue([]);
 
-    await expect(service.listMessages(THREAD_ID)).resolves.toEqual([]);
-
-    client.threads.getState.mockResolvedValue({});
     await expect(service.listMessages(THREAD_ID)).resolves.toEqual([]);
   });
 
   it('a missing thread is a 404 on listMessages', async () => {
-    const { service, client } = buildService();
-    client.threads.getState.mockRejectedValue(notFound());
+    const { service, client, messages } = buildService();
+    client.threads.get.mockRejectedValue(notFound());
 
     await expect(service.listMessages(THREAD_ID)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+    expect(messages.listByThread).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatService deleteSession', () => {
+  it('deleteSession deletes the thread and deletes chat_messages rows', async () => {
+    const { service, client, messages } = buildService();
+
+    await expect(service.deleteSession(THREAD_ID)).resolves.toBeUndefined();
+
+    expect(client.threads.delete).toHaveBeenCalledWith(THREAD_ID);
+    expect(messages.deleteByThread).toHaveBeenCalledWith(THREAD_ID);
   });
 
-  it('listMessages synthesizes the id of a message without one', async () => {
-    const { service, client } = buildService();
-    client.threads.getState.mockResolvedValue({
-      values: {
-        messages: [
-          { type: 'human', content: 'hi' },
-          { type: 'ai', content: 'ok' },
-        ],
-      },
-    });
+  it('deleteSession stays idempotent when thread delete fails with 404', async () => {
+    const { service, client, messages } = buildService();
+    client.threads.delete.mockRejectedValue(notFound());
 
-    const messages = await service.listMessages(THREAD_ID);
+    await expect(service.deleteSession(THREAD_ID)).resolves.toBeUndefined();
 
-    expect(messages.map((message) => message.id)).toEqual([
-      `${THREAD_ID}-m0`,
-      `${THREAD_ID}-m1`,
-    ]);
+    expect(messages.deleteByThread).toHaveBeenCalledWith(THREAD_ID);
   });
 });
 
@@ -407,7 +526,7 @@ describe('thread-backed sessions', () => {
   });
 
   it('createSession creates the thread and returns its summary', async () => {
-    const { service, client } = buildService();
+    const { service, client, messages } = buildService();
 
     const session = await service.createSession();
 
@@ -462,16 +581,5 @@ describe('thread-backed sessions', () => {
       metadata: { source: 'input', title: 'A new title' },
     });
     expect(session.title).toBe('A new title');
-  });
-
-  it('deleteSession deletes the thread and stays idempotent', async () => {
-    const client = stubClient();
-    const { service } = buildService(client);
-
-    await expect(service.deleteSession(THREAD_ID)).resolves.toBeUndefined();
-    expect(client.threads.delete).toHaveBeenCalledWith(THREAD_ID);
-
-    client.threads.delete.mockRejectedValue(notFound());
-    await expect(service.deleteSession(THREAD_ID)).resolves.toBeUndefined();
   });
 });
