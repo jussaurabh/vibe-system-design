@@ -42,4 +42,5 @@ Friendly, encouraging.
 <agent>I focus exclusively on system design. Let's discuss frontend architecture, state management, or component boundaries instead. What architectural pattern fits your UI needs?</agent>
 </example>
 </examples>
-</system_prompt>"""
+</system_prompt>
+"""

@@ -7,4 +7,8 @@ fileignoreconfig:
   checksum: 2ad29d1494b9a993a387a59269529eead9f5ffd7a44195e84e9e4a7194f6bd82
 - filename: vibe-system-design-agent/.env.example
   checksum: 2cd235da90c451dea2b34a68b28621930bf92e25566a0a2d2febba6eca2fc42f
+- filename: vibe-system-design-agent/src/vibe_system_design_agent/agent.py
+  checksum: 2afca1ebe9e109e670378f4b4ab623d84249a85d91847a536c18b46696eeb320
+- filename: vibe-system-design-agent/tests/test_agent.py
+  checksum: 1259f7b03f28d71957524c824b451a11729bebad7e7aa558dbaddbc9bca8ed2b
 version: "1.0"
