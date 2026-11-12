@@ -1,6 +1,6 @@
 fileignoreconfig:
 - filename: bun.lock
-  checksum: 3d0da05a6297e9d2f3c59db5b88807c05a5789b2bc818ff25c0f512d69826745
+  checksum: e0a27f50bcf80ced7e9640fb432e6006da8204e661858b15a473e04434d76e52
 - filename: vibe-system-design-agent/uv.lock
   checksum: f280a5b21599cf85ac6e5aa3432cbc83cbd1f54f5b1b693b5e32b4ea409da22d
 - filename: vibe-system-design-agent/.env.docker.example
