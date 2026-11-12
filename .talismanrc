@@ -1,6 +1,6 @@
 fileignoreconfig:
 - filename: bun.lock
-  checksum: 084610524518b61405a5fa2acce91c26b3f9e5d4795b55abc3f00ed43eae89b2
+  checksum: e0a27f50bcf80ced7e9640fb432e6006da8204e661858b15a473e04434d76e52
 - filename: vibe-system-design-agent/uv.lock
   checksum: f280a5b21599cf85ac6e5aa3432cbc83cbd1f54f5b1b693b5e32b4ea409da22d
 - filename: vibe-system-design-agent/.env.docker.example
@@ -11,4 +11,8 @@ fileignoreconfig:
   checksum: 2afca1ebe9e109e670378f4b4ab623d84249a85d91847a536c18b46696eeb320
 - filename: vibe-system-design-agent/tests/test_agent.py
   checksum: 1259f7b03f28d71957524c824b451a11729bebad7e7aa558dbaddbc9bca8ed2b
+- filename: vibe-system-design-ui/src/canvas/sceneStorage.ts
+  checksum: af2f630fa7b51853b52b93ed56f695e9e16dcc8aaa99ad520c700fe07af2d5af
+- filename: vibe-system-design-ui/src/canvas/sceneStorage.test.ts
+  checksum: 807a977e0b213aa00d0527c53350c5e6e89465d1f58ca697d195b9a53d2828c8
 version: "1.0"

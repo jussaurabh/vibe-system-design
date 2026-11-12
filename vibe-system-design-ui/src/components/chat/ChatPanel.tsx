@@ -10,7 +10,7 @@ import { ToastContainer } from "../ui/toast-container";
 import "./chat.css";
 
 /**
- * Right-side chat panel. Occupies exactly 35% of the screen width (the xyflow
+ * Right-side chat panel. Occupies exactly 35% of the screen width (the Excalidraw
  * canvas takes the remaining 65% in App.tsx). Surfaces use the Notion design
  * tokens; the dark theme (`.dark` on <html>) flips them via CSS variables.
  */

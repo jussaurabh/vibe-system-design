@@ -3,11 +3,6 @@
 - Never commit with `--no-verify`.
 - fix any issues related to talisman or husky then commit the changes without using `--no-verify` flag.
 
-# xyflow (formally know as React Flow)
-
-Go through the latest documentation of `xyflow` for any implementation in `vibe-system-design-ui`.
-Find the documentation links from `docs/xyflow-sitemap.xml`, for related queries.
-
 ## Project rules
 
 - Both `vibe-system-design-ui`, `vibe-system-design-backend` and `vibe-system-design-agent` are running on `bun`.
