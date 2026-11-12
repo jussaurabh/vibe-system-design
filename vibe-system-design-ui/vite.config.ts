@@ -8,6 +8,7 @@ const BACKEND_ORIGIN = process.env.VITE_API_PROXY_TARGET ?? "http://localhost:30
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  optimizeDeps: { exclude: ["@excalidraw/excalidraw"] },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
