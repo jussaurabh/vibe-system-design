@@ -5,6 +5,14 @@ services:
     ports:
       - "8123:8000"
     env_file: .env
+    environment:
+      # TTL is enforced by the Go core (core-api-grpc), which reads env only.
+      # langgraph.json is read by the LangSmith platform, not by this image, so
+      # this block duplicates the checkpointer.ttl values on purpose. Keep both
+      # in sync: self-hosted runs use this one.
+      # Format: JSON, snake_case keys. A bare number is also accepted and means
+      # strategy=delete with that many minutes.
+      LANGGRAPH_THREAD_TTL: '{"strategy":"keep_latest","default_ttl":43200,"sweep_interval_minutes":60}'
     # Redis comes from outside this compose file (a locally running container
     # or a managed instance). REDIS_URI in .env.docker decides where. The
     # host-gateway mapping keeps host.docker.internal working on Linux too.
