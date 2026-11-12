@@ -18,14 +18,13 @@ export default defineConfig({
       indent: "  ",
     }),
   ],
-  optimizeDeps: { exclude: ["@excalidraw/excalidraw"] },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
       "open-color": path.resolve(import.meta.dirname, "./src/shims/open-color.js"),
     },
-    conditions: ["development", "import", "module", "default"],
-    mainFields: ["module", "main"],
+    conditions: ["development", "import", "module", "browser", "default"],
+    mainFields: ["browser", "module", "main"],
     extensions: [".js", ".ts", ".jsx", ".tsx", ".json"],
   },
   server: {

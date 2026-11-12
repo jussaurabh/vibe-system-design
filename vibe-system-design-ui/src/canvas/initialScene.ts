@@ -1,9 +1,25 @@
 import { convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
-type ExcalidrawElementSkeleton =
-  | { type: "rectangle"; id: string; x: number; y: number; width: number; height: number; label?: { text: string } }
-  | { type: "arrow"; id: string; x: number; y: number; start: { id: string }; end: { id: string } };
+type SceneSkeleton =
+  | {
+      type: "rectangle";
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      label?: { text: string };
+    }
+  | {
+      type: "arrow";
+      id: string;
+      x: number;
+      y: number;
+      points: [number, number][];
+      start: { id: string };
+      end: { id: string };
+    };
 
 const BOX_W = 180;
 const BOX_H = 72;
@@ -24,25 +40,63 @@ const EDGES = [
   { id: "e-worker-db", from: "worker-pool", to: "postgresql" },
 ] as const;
 
-export const INITIAL_SCENE_SKELETONS: ExcalidrawElementSkeleton[] = [
-  ...BOXES.map((b) => ({
+type Box = (typeof BOXES)[number];
+
+const boxCentre = (box: Box) => ({
+  x: box.x + BOX_W / 2,
+  y: box.y + BOX_H / 2,
+});
+
+// Point where the ray from the box centre toward `target` crosses the box border.
+const edgeAnchor = (box: Box, target: { x: number; y: number }) => {
+  const centre = boxCentre(box);
+  const dx = target.x - centre.x;
+  const dy = target.y - centre.y;
+  const scaleX = dx === 0 ? Infinity : BOX_W / 2 / Math.abs(dx);
+  const scaleY = dy === 0 ? Infinity : BOX_H / 2 / Math.abs(dy);
+  const scale = Math.min(scaleX, scaleY);
+  return { x: centre.x + dx * scale, y: centre.y + dy * scale };
+};
+
+const boxesById = new Map<string, Box>(BOXES.map((box) => [box.id, box]));
+
+const boxFor = (id: string): Box => {
+  const box = boxesById.get(id);
+  if (!box) {
+    throw new Error(`Unknown box id: ${id}`);
+  }
+  return box;
+};
+
+// Excalidraw does not route bound arrows from the `start`/`end` ids alone, so each
+// arrow carries explicit geometry that begins and ends on the box borders.
+export const INITIAL_SCENE_SKELETONS: SceneSkeleton[] = [
+  ...BOXES.map((box) => ({
     type: "rectangle" as const,
-    id: b.id,
-    x: b.x,
-    y: b.y,
+    id: box.id,
+    x: box.x,
+    y: box.y,
     width: BOX_W,
     height: BOX_H,
-    label: { text: `${b.label}\n${b.sublabel}` },
+    label: { text: `${box.label}\n${box.sublabel}` },
   })),
-  ...EDGES.map((e) => {
-    const from = BOXES.find((b) => b.id === e.from)!;
+  ...EDGES.map((edge) => {
+    const from = boxFor(edge.from);
+    const to = boxFor(edge.to);
+    const start = edgeAnchor(from, boxCentre(to));
+    const end = edgeAnchor(to, boxCentre(from));
+    const points: [number, number][] = [
+      [0, 0],
+      [end.x - start.x, end.y - start.y],
+    ];
     return {
       type: "arrow" as const,
-      id: e.id,
-      x: from.x + BOX_W,
-      y: from.y + BOX_H / 2,
-      start: { id: e.from },
-      end: { id: e.to },
+      id: edge.id,
+      x: start.x,
+      y: start.y,
+      points,
+      start: { id: edge.from },
+      end: { id: edge.to },
     };
   }),
 ];

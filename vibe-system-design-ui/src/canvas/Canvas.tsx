@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Excalidraw } from "@excalidraw/excalidraw";
+import "@excalidraw/excalidraw/index.css";
 import { buildInitialScene } from "./initialScene";
 import { createSceneSaver, loadSavedScene } from "./sceneStorage";
 
